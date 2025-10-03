@@ -234,7 +234,7 @@ class TestOutputPlots(object):
         plt.close()
 
         f, ax = plt.subplots(1, 1, figsize=(4, 4))
-        kwargs_plot = {"index_macromodel": [0], "with_critical_curves": True}
+        kwargs_plot = {"index_macromodel": [0], "super_sample_factor": 2}
         lensPlot_multiplane.substructure_plot(ax=ax, **kwargs_plot)
         plt.close()
 
@@ -286,6 +286,20 @@ class TestOutputPlots(object):
             band_index=0, numPix=10, deltaPix=0.1, center=[0, 0]
         )
         assert len(source) == 10
+
+    def test_single_band_chi2(self):
+        multi_band_list = [[self.kwargs_data, self.kwargs_psf, self.kwargs_numerics]]
+        lensPlot = ModelPlot(
+            multi_band_list,
+            self.kwargs_model,
+            self.kwargs_params,
+            arrow_size=0.02,
+            cmap_string="gist_heat",
+        )
+
+        chi2 = lensPlot.single_band_chi2(band_index=0)
+
+        assert isinstance(chi2, float)
 
     def test_joint_linear(self):
         multi_band_list = [

@@ -183,7 +183,6 @@ class TDCosmography(KinematicsAPI):
         r_eff=None,
         theta_E=None,
         gamma=None,
-        direct_convolve=False,
         supersampling_factor=1,
         voronoi_bins=None,
     ):
@@ -200,7 +199,6 @@ class TDCosmography(KinematicsAPI):
         :param r_eff: projected half-light radius of the stellar light associated
             with the deflector galaxy, optional, if set to None will be computed in this
             function with default settings that may not be accurate.
-        :param direct_convolve: bool, if True, compute the 2D integral numerically
         :param supersampling_factor: supersampling factor for 2D integration grid
         :param voronoi_bins: mapping of the voronoi bins, -1 values for  pixels not
             binned
@@ -213,14 +211,11 @@ class TDCosmography(KinematicsAPI):
             r_eff=r_eff,
             theta_E=theta_E,
             gamma=gamma,
-            direct_convolve=direct_convolve,
             supersampling_factor=supersampling_factor,
             voronoi_bins=voronoi_bins,
         )
         sigma_v_map *= 1000  # convert from [km/s] to  [m/s]
-        J_map = (
-            sigma_v_map**2 * self._lens_cosmo.dds / self._lens_cosmo.ds / const.c**2
-        )
+        J_map = sigma_v_map**2 * self._lens_cosmo.dds / self._lens_cosmo.ds / const.c**2
         return J_map
 
     @staticmethod

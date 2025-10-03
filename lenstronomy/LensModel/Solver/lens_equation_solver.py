@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import lenstronomy.Util.util as util
 import lenstronomy.Util.image_util as image_util
@@ -5,6 +7,16 @@ from scipy.optimize import minimize
 from lenstronomy.LensModel.Solver.epl_shear_solver import solve_lenseq_pemd
 
 __all__ = ["LensEquationSolver"]
+
+SUPPORTED_LENS_MODELS_ANALYTICAL = (
+    ["SIS", "SHEAR"],
+    ["SIE", "SHEAR"],
+    ["SIE"],
+    ["EPL_NUMBA", "SHEAR"],
+    ["EPL_NUMBA"],
+    ["EPL", "SHEAR"],
+    ["EPL"],
+)
 
 
 class LensEquationSolver(object):
@@ -18,6 +30,15 @@ class LensEquationSolver(object):
             lenstronomy.LensModel.lens_model
         """
         self.lensModel = lensModel
+
+    def change_source_redshift(self, z_source=None):
+        """Change source redshift in solver.
+
+        :param z_source:
+        :type z_source: float or None
+        :return: updated lens model instance
+        """
+        self.lensModel.change_source_redshift(z_source=z_source)
 
     def image_position_stochastic(
         self,
@@ -158,22 +179,64 @@ class LensEquationSolver(object):
         :param kwargs_solver: additional kwargs to be supplied to the solver. Particularly relevant are Nmeas and Nmeas_extra
         :returns: (exact) angular position of (multiple) images ra_pos, dec_pos in units of angle
          Note: in contrast to the other solvers, generally the (heavily demagnified) central image will also be included, so
-         setting a a proper magnification_limit is more important. To get similar behaviour, a limit of 1e-1 is acceptable
+         setting a proper magnification_limit is more important. To get similar behaviour, a limit of 1e-1 is acceptable
         """
-        lens_model_list = list(self.lensModel.lens_model_list)
-        if lens_model_list not in (
-            ["SIE", "SHEAR"],
-            ["SIE"],
-            ["EPL_NUMBA", "SHEAR"],
-            ["EPL_NUMBA"],
-            ["EPL", "SHEAR"],
-            ["EPL"],
-        ):
+        lens_model_list = copy.deepcopy(list(self.lensModel.lens_model_list))
+
+        if self.lensModel.type != "SinglePlane":
             raise ValueError(
-                "Only SIE, EPL, EPL_NUMBA (+shear) supported in the analytical solver for now."
+                "lens model type %s not supported for analytical lens equation solver, "
+                "Needs to be SinglePlane." % self.lensModel.type
+            )
+        alpha_scaling = self.lensModel.lens_model.alpha_scaling
+        # make MST when "CONVERGENCE" profile is given
+        if "CONVERGENCE" in lens_model_list:
+            # here we apply an inverse MST that leaves image positions invariant under the MST
+            kwargs_lens_ = copy.deepcopy(kwargs_lens)
+            index_convergence = lens_model_list.index("CONVERGENCE")
+
+            # MST in source position and Einstein radius
+            kappa = kwargs_lens_[index_convergence]["kappa"] * alpha_scaling
+            ra0 = kwargs_lens_[index_convergence].get("ra_0", 0)
+            dec0 = kwargs_lens_[index_convergence].get("dec_0", 0)
+            lambda_mst = (
+                1 - kappa
+            )  # a mass sheet that compensates the convergence field
+            # source position mapping
+            x_ = (x - ra0) / lambda_mst
+            y_ = (y - dec0) / lambda_mst
+            # lens mapping
+            # power-law scaling with mst
+            # alpha = theta_E * (r2 / theta_E**2) ** (1 - gamma / 2.0)
+            gamma = kwargs_lens[0]["gamma"] if "gamma" in kwargs_lens[0] else 2
+
+            kwargs_lens_[0]["theta_E"] /= lambda_mst ** (1.0 / (gamma - 1))
+            if "SHEAR" in lens_model_list:
+                kwargs_lens_[1]["gamma1"] /= lambda_mst
+                kwargs_lens_[1]["gamma2"] /= lambda_mst
+
+            # removing of kwargs_lens of "CONVERGENCE" profile
+            kwargs_lens_.pop(index_convergence)
+            lens_model_list.pop(index_convergence)
+        else:
+            kwargs_lens_ = copy.deepcopy(kwargs_lens)
+            x_, y_ = x, y
+        if lens_model_list not in SUPPORTED_LENS_MODELS_ANALYTICAL:
+            raise ValueError(
+                "Only SIS (only with shear), SIE, EPL, EPL_NUMBA (+shear +convergence) "
+                "supported in the analytical solver for now."
             )
 
-        x_mins, y_mins = solve_lenseq_pemd((x, y), kwargs_lens, **kwargs_solver)
+        # re-scale solutions if source redshift has changed (i.e. alpha_scaling != 1)
+
+        gamma = kwargs_lens[0]["gamma"] if "gamma" in kwargs_lens[0] else 2
+        kwargs_lens_[0]["theta_E"] *= alpha_scaling ** (1.0 / (gamma - 1))
+        if "SHEAR" in lens_model_list:
+            kwargs_lens_[1]["gamma1"] *= alpha_scaling
+            kwargs_lens_[1]["gamma2"] *= alpha_scaling
+
+        x_mins, y_mins = solve_lenseq_pemd((x_, y_), kwargs_lens_, **kwargs_solver)
+
         if arrival_time_sort:
             x_mins, y_mins = self.sort_arrival_times(x_mins, y_mins, kwargs_lens)
         if magnification_limit is not None:
@@ -588,11 +651,7 @@ class LensEquationSolver(object):
             non_linear=non_linear,
             magnification_limit=magnification_limit,
         )
-        mag_list = []
-        for i in range(len(x_mins)):
-            mag = self.lensModel.magnification(x_mins[i], y_mins[i], kwargs_lens)
-            mag_list.append(abs(mag))
-        mag_list = np.array(mag_list)
+        mag_list = np.abs(self.lensModel.magnification(x_mins, y_mins, kwargs_lens))
         x_mins_sorted = util.selectBest(x_mins, mag_list, numImages)
         y_mins_sorted = util.selectBest(y_mins, mag_list, numImages)
         if arrival_time_sort:
@@ -628,3 +687,20 @@ class LensEquationSolver(object):
         x_mins = np.array(x_mins)[idx]
         y_mins = np.array(y_mins)[idx]
         return x_mins, y_mins
+
+
+def analytical_lens_model_support(lens_model_list):
+    """Checks whether analytical solver can be used.
+
+    :param lens_model_list:
+    :return: True if analytical solver can be used, False if not
+    :rtype: bool
+    """
+    model_list = copy.deepcopy(lens_model_list)
+    if "CONVERGENCE" in model_list:
+        index_convergence = lens_model_list.index("CONVERGENCE")
+        model_list.pop(index_convergence)
+    if model_list in SUPPORTED_LENS_MODELS_ANALYTICAL:
+        return True
+    else:
+        return False

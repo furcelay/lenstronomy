@@ -19,12 +19,11 @@ class MultiPlaneBase(ProfileListBase):
         lens_redshift_list,
         z_source_convention,
         cosmo=None,
-        numerical_alpha_class=None,
         cosmo_interp=False,
         z_interp_stop=None,
         num_z_interp=100,
-        kwargs_interp=None,
-        kwargs_synthesis=None,
+        profile_kwargs_list=None,
+        use_jax=False,
     ):
         """
         A description of the recursive multi-plane formalism can be found e.g. here: https://arxiv.org/abs/1312.1536
@@ -32,14 +31,16 @@ class MultiPlaneBase(ProfileListBase):
         :param lens_model_list: list of lens model strings
         :param lens_redshift_list: list of floats with redshifts of the lens models indicated in lens_model_list
         :param z_source_convention: float, redshift of a source to define the reduced deflection angles of the lens
-         models. If None, 'z_source' is used.
+            models. If None, 'z_source' is used.
         :param cosmo: instance of astropy.cosmology
-        :param numerical_alpha_class: an instance of a custom class for use in NumericalAlpha() lens model
-         (see documentation in Profiles/numerical_alpha)
-        :param kwargs_interp: interpolation keyword arguments specifying the numerics.
-         See description in the Interpolate() class. Only applicable for 'INTERPOL' and 'INTERPOL_SCALED' models.
-        :param kwargs_synthesis: keyword arguments for the 'SYNTHESIS' lens model, if applicable
+        :param profile_kwargs_list: list of dicts, keyword arguments used to initialize profile classes
+            in the same order of the lens_model_list. If any of the profile_kwargs are None, then that
+            profile will be initialized using default settings.
+        :param use_jax: bool, if True, uses deflector profiles from jaxtronomy.
+            Can also be a list of bools, selecting which models in the lens_model_list to use from jaxtronomy
         """
+        self._lens_model_list = lens_model_list
+
         if z_interp_stop is None:
             z_interp_stop = z_source_convention
         self._cosmo_bkg = Background(
@@ -54,38 +55,49 @@ class MultiPlaneBase(ProfileListBase):
                     "reduced lens model quantities not allowed (leads to negative reduced deflection "
                     "angles!" % (z_lens_max, z_source_convention)
                 )
-        if not len(lens_model_list) == len(lens_redshift_list):
+        if not len(self._lens_model_list) == len(lens_redshift_list):
             raise ValueError(
                 "The length of lens_model_list does not correspond to redshift_list"
             )
 
         self._lens_redshift_list = lens_redshift_list
         super(MultiPlaneBase, self).__init__(
-            lens_model_list,
-            numerical_alpha_class=numerical_alpha_class,
+            self._lens_model_list,
             lens_redshift_list=lens_redshift_list,
             z_source_convention=z_source_convention,
-            kwargs_interp=kwargs_interp,
-            kwargs_synthesis=kwargs_synthesis,
+            profile_kwargs_list=profile_kwargs_list,
+            use_jax=use_jax,
         )
 
-        if len(lens_model_list) < 1:
+        if len(self._lens_model_list) < 1:
             self._sorted_redshift_index = []
         else:
             self._sorted_redshift_index = self._index_ordering(lens_redshift_list)
-        z_before = 0
-        T_z = 0
+
         self._T_ij_list = []
         self._T_z_list = []
+
+        self._reduced2physical_factor = []
+
+        self.set_T_zs_and_T_ijs()
+
+    def set_T_zs_and_T_ijs(self):
+        """Set the transverse angular diameter distances between the observer and the
+        lens planes and between the lens planes."""
+        z_before = 0
+        T_z = 0
         # Sort redshift for vectorized reduced2physical factor calculation
-        if len(lens_model_list) < 1:
+        if len(self._lens_model_list) < 1:
             self._reduced2physical_factor = []
         else:
             z_sort = np.array(self._lens_redshift_list)[self._sorted_redshift_index]
-            z_source_array = np.ones(z_sort.shape) * z_source_convention
+            z_source_array = np.ones(z_sort.shape) * self._z_source_convention
             self._reduced2physical_factor = self._cosmo_bkg.d_xy(
-                0, z_source_convention
+                0, self._z_source_convention
             ) / self._cosmo_bkg.d_xy(z_sort, z_source_array)
+
+        self._T_ij_list = []
+        self._T_z_list = []
         for idex in self._sorted_redshift_index:
             z_lens = self._lens_redshift_list[idex]
             if z_before == z_lens:
@@ -96,6 +108,14 @@ class MultiPlaneBase(ProfileListBase):
             self._T_ij_list.append(delta_T)
             self._T_z_list.append(T_z)
             z_before = z_lens
+
+    def set_background_cosmo(self, cosmo):
+        """Set the cosmology instance of the background class.
+
+        :param cosmo: instance of astropy.cosmology
+        """
+        self._cosmo_bkg.cosmo = cosmo
+        self.set_T_zs_and_T_ijs()
 
     @property
     def z_source_convention(self):
@@ -173,6 +193,8 @@ class MultiPlaneBase(ProfileListBase):
         alpha_x = np.array(alpha_x)
         alpha_y = np.array(alpha_y)
 
+        # NOTE: jax arrays are converted back into regular numpy arrays in cases where use_jax is True.
+
         z_lens_last = z_start
         first_deflector = True
         for i, idex in enumerate(self._sorted_redshift_index):
@@ -206,7 +228,7 @@ class MultiPlaneBase(ProfileListBase):
         else:
             delta_T = T_ij_end
         x, y = self._ray_step_add(x, y, alpha_x, alpha_y, delta_T)
-        return x, y, alpha_x, alpha_y
+        return np.asarray(x), np.asarray(y), np.asarray(alpha_x), np.asarray(alpha_y)
 
     def ray_shooting_partial(
         self,
@@ -323,6 +345,9 @@ class MultiPlaneBase(ProfileListBase):
         y = np.zeros_like(theta_y, dtype=float)
         alpha_x = np.array(theta_x, dtype=float)
         alpha_y = np.array(theta_y, dtype=float)
+
+        # NOTE: jax arrays are converted back into regular numpy arrays in cases where use_jax is True.
+
         i = 0
         z_lens_last = 0
         for i, index in enumerate(self._sorted_redshift_index):
@@ -363,7 +388,7 @@ class MultiPlaneBase(ProfileListBase):
             beta_i_x, beta_i_y, beta_j_x, beta_j_y, T_i, T_j, T_ij
         )
         dt_geo += dt_geo_new
-        return dt_geo, dt_grav
+        return np.asarray(dt_geo), np.asarray(dt_grav)
 
     @staticmethod
     def _index_ordering(redshift_list):
@@ -422,9 +447,7 @@ class MultiPlaneBase(ProfileListBase):
         """
         d_beta_x = beta_j_x - beta_i_x
         d_beta_y = beta_j_y - beta_i_y
-        tau_ij = (
-            T_i * T_j / T_ij * const.Mpc / const.c / const.day_s * const.arcsec**2
-        )
+        tau_ij = T_i * T_j / T_ij * const.Mpc / const.c / const.day_s * const.arcsec**2
         return tau_ij * (d_beta_x**2 + d_beta_y**2) / 2
 
     def _lensing_potential2time_delay(self, potential, z_lens, z_source):

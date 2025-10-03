@@ -1,5 +1,8 @@
 import numpy as np
 from numpy.linalg import inv
+from lenstronomy.Util.cosmo_util import get_astropy_cosmology
+
+import warnings
 
 __all__ = ["PositionLikelihood"]
 
@@ -16,8 +19,7 @@ class PositionLikelihood(object):
         ra_image_list=None,
         dec_image_list=None,
         source_position_likelihood=False,
-        check_matched_source_position=False,
-        source_position_tolerance=0.001,
+        source_position_tolerance=None,
         source_position_sigma=0.001,
         force_no_add_image=False,
         restrict_image_number=False,
@@ -27,26 +29,27 @@ class PositionLikelihood(object):
 
         :param point_source_class: Instance of PointSource() class
         :param image_position_uncertainty: uncertainty in image position uncertainty (1-sigma Gaussian radially),
-         this is applicable for astrometric uncertainties as well as if image positions are provided as data
+            this is applicable for astrometric uncertainties as well as if image positions are provided as data
         :param astrometric_likelihood: bool, if True, evaluates the astrometric uncertainty of the predicted and modeled
-         image positions with an offset 'delta_x_image' and 'delta_y_image'
+            image positions with an offset 'delta_x_image' and 'delta_y_image'
         :param image_position_likelihood: bool, if True, evaluates the likelihood of the model predicted image position
-         given the data/measured image positions
+            given the data/measured image positions
         :param ra_image_list: list or RA image positions per model component
         :param dec_image_list: list or DEC image positions per model component
         :param source_position_likelihood: bool, if True, ray-traces image positions back to source plane and evaluates
-         relative errors in respect ot the position_uncertainties in the image plane (image_position_uncertainty)
-        :param check_matched_source_position: bool, if True, checks whether multiple images are a solution of the same
-         source
-        :param source_position_tolerance: tolerance level (in arc seconds in the source plane) of the different images
+            relative errors in respect ot the position_uncertainties in the image plane (image_position_uncertainty)
+        :param source_position_tolerance: tolerance level (in arc seconds in the source plane) of the different images.
+            If set =! None, then the backwards ray tracing is performed on the images and demand on the same position of
+            the source is meant to match the requirements, otherwise a punishing likelihood term is introduced
+        :type source_position_tolerance: None or float
         :param source_position_sigma: r.m.s. value corresponding to a 1-sigma Gaussian likelihood accepted by the model
-         precision in matching the source position
+            precision in matching the source position transformed from the image plane
         :param force_no_add_image: bool, if True, will punish additional images appearing in the frame of the modelled
-         image(first calculate them)
+            image(first calculate them)
         :param restrict_image_number: bool, if True, searches for all appearing images in the frame of the data and
-         compares with max_num_images
+            compares with max_num_images
         :param max_num_images: integer, maximum number of appearing images. Default is the number of  images given in
-         the Param() class
+            the Param() class
         """
         self._pointSource = point_source_class
         # TODO replace with public function of ray_shooting
@@ -54,8 +57,15 @@ class PositionLikelihood(object):
         self._astrometric_likelihood = astrometric_likelihood
         self._image_position_sigma = image_position_uncertainty
         self._source_position_sigma = source_position_sigma
-        self._check_matched_source_position = check_matched_source_position
-        self._bound_source_position_scatter = source_position_tolerance
+        if (
+            source_position_tolerance is not None
+            and source_position_likelihood is False
+        ):
+            warnings.warn(
+                "source_position_tolerance has been set but source_position_likelihood is False. \n"
+                "In order to use the source_position_tolerance, set source_position_likelihood to True"
+            )
+        self._bound_source_position_tolerance = source_position_tolerance
         self._force_no_add_image = force_no_add_image
         self._restrict_number_images = restrict_image_number
         self._source_position_likelihood = source_position_likelihood
@@ -82,6 +92,13 @@ class PositionLikelihood(object):
         """
 
         logL = 0
+        if self._lensModel.cosmology_sampling:
+            cosmo = get_astropy_cosmology(
+                cosmology_model=self._lensModel.cosmology_model,
+                param_kwargs=kwargs_special,
+            )
+            self._lensModel.update_cosmology(cosmo)
+
         if self._astrometric_likelihood is True:
             logL_astrometry = self.astrometric_likelihood(
                 kwargs_ps, kwargs_special, self._image_position_sigma
@@ -89,17 +106,6 @@ class PositionLikelihood(object):
             logL += logL_astrometry
             if verbose is True:
                 print("Astrometric likelihood = %s" % logL_astrometry)
-        if self._check_matched_source_position is True:
-            logL_source_scatter = self.source_position_likelihood(
-                kwargs_lens,
-                kwargs_ps,
-                self._source_position_sigma,
-                hard_bound_rms=self._bound_source_position_scatter,
-                verbose=verbose,
-            )
-            logL += logL_source_scatter
-            if verbose is True:
-                print("Source scatter punishing likelihood = %s" % logL_source_scatter)
         if self._force_no_add_image:
             additional_image_bool = self.check_additional_images(kwargs_ps, kwargs_lens)
             if additional_image_bool is True:
@@ -119,9 +125,13 @@ class PositionLikelihood(object):
                         "Number of images found %s exceeded the limited number allowed %s"
                         % (len(ra_image_list[0]), self._max_num_images)
                     )
-        if self._source_position_likelihood is True:
+        if self._source_position_likelihood:
             logL_source_pos = self.source_position_likelihood(
-                kwargs_lens, kwargs_ps, sigma=self._image_position_sigma
+                kwargs_lens,
+                kwargs_ps,
+                self._source_position_sigma,
+                hard_bound_rms=self._bound_source_position_tolerance,
+                verbose=verbose,
             )
             logL += logL_source_pos
             if verbose is True:
@@ -138,8 +148,7 @@ class PositionLikelihood(object):
         return logL
 
     def check_additional_images(self, kwargs_ps, kwargs_lens):
-        """Checks whether additional images have been found and placed in kwargs_ps of
-        the first point source model.
+        """Checks whether additional images have been found and placed in kwargs_ps.
 
         :param kwargs_ps: point source kwargs
         :param kwargs_lens: lens model keyword arguments
@@ -168,6 +177,7 @@ class PositionLikelihood(object):
         :return: log likelihood of the astrometirc correction between predicted image
             positions and model placement of the point sources
         """
+        # TODO: make it compatible with multiple source instances
         if not len(kwargs_ps) > 0:
             return 0
         if "ra_image" not in kwargs_ps[0]:
@@ -184,7 +194,12 @@ class PositionLikelihood(object):
         else:
             return 0
 
-    def image_position_likelihood(self, kwargs_ps, kwargs_lens, sigma):
+    def image_position_likelihood(
+        self,
+        kwargs_ps,
+        kwargs_lens,
+        sigma,
+    ):
         """Computes the likelihood of the model predicted image position relative to
         measured image positions with an astrometric error. This routine requires the
         'ra_image_list' and 'dec_image_list' being declared in the initiation of the
@@ -196,6 +211,7 @@ class PositionLikelihood(object):
         :return: log likelihood of the model predicted image positions given the
             data/measured image positions.
         """
+
         ra_image_list, dec_image_list = self._pointSource.image_position(
             kwargs_ps=kwargs_ps, kwargs_lens=kwargs_lens, original_position=True
         )
@@ -215,7 +231,12 @@ class PositionLikelihood(object):
         return logL
 
     def source_position_likelihood(
-        self, kwargs_lens, kwargs_ps, sigma, hard_bound_rms=None, verbose=False
+        self,
+        kwargs_lens,
+        kwargs_ps,
+        sigma,
+        hard_bound_rms=None,
+        verbose=False,
     ):
         """Computes a likelihood/punishing factor of how well the source positions of
         multiple images match given the image position and a lens model. The likelihood
@@ -235,6 +256,8 @@ class PositionLikelihood(object):
             return 0
         logL = 0
         source_x, source_y = self._pointSource.source_position(kwargs_ps, kwargs_lens)
+        redshift_list = self._pointSource._redshift_list
+
         for k in range(len(kwargs_ps)):
             if (
                 "ra_image" in kwargs_ps[k]
@@ -242,11 +265,10 @@ class PositionLikelihood(object):
             ):
                 x_image = kwargs_ps[k]["ra_image"]
                 y_image = kwargs_ps[k]["dec_image"]
+                self._lensModel.change_source_redshift(redshift_list[k])
                 # calculating the individual source positions from the image positions
-                # TODO: have option for ray-shooting back to specific redshift in multi-plane lensing
                 k_list = self._pointSource.k_list(k)
                 for i in range(len(x_image)):
-                    # TODO: add redshift information in computation
                     if k_list is not None:
                         k_lens = k_list[i]
                     else:
@@ -267,9 +289,9 @@ class PositionLikelihood(object):
                         if delta[0] ** 2 + delta[1] ** 2 > hard_bound_rms**2:
                             if verbose is True:
                                 print(
-                                    "Image positions do not match to the same source position to the required "
+                                    "Image positions of image %s of model %s do not match to the same source position to the required "
                                     "precision. Achieved: %s, Required: %s."
-                                    % (delta, hard_bound_rms)
+                                    % (i, k, delta, hard_bound_rms)
                                 )
                             logL -= 10**3
                     try:

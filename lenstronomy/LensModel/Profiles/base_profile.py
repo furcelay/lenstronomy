@@ -10,15 +10,19 @@ class LensProfileBase(object):
     1. make a new python file in this folder
     2. create a class inheriting this class; YourModel(LensProfileBase)
     3. write new definitions following the same input and output conventions as this base class
-        function(x, y, <other parameters>)
-        derivatives(x, y, <other parameters>)
-        hessian(x, y, <other parameters>)
+    - function(x, y, <other parameters>)
+    - derivatives(x, y, <other parameters>)
+    - hessian(x, y, <other parameters>)
     4. set the variables for sampling the new profile
+
         param_names = ["param1", "param2", ...]
         lower_limit_default = {"param1": value, "param2: value, ...}
         upper_limit_default = {"param1": value, "param2: value, ...}
+
     5. give the new profile a meaningful name and add it in the LensModel.profile_list_base class
     6. write test functions in the test/test_LensModel/test_Profiles folder with a new file with test_<profile name>.py
+    7. add a test to check whether the numerical derivatives of the lensing potential and deflection angles result in
+        the corresponding quantities in test/test_LensModel/test_numerical_lens_differentials.py
 
     With that, you should be good to go and import and use it for any purpose.
     Further definitions in the class are optional and only used for certain applications (such as kinematics)

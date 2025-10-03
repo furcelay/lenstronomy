@@ -4,16 +4,28 @@ __author__ = "sibirrer"
 import numpy as np
 from lenstronomy.LensModel.Profiles.base_profile import LensProfileBase
 
-__all__ = ["Gaussian"]
+__all__ = ["GaussianPotential"]
 
 
-class Gaussian(LensProfileBase):
-    """This class contains functions to evaluate a Gaussian function and calculates its
+class GaussianPotential(LensProfileBase):
+    """This class contains functions to evaluate a Gaussian potential and calculates its
     derivative and hessian matrix."""
 
     param_names = ["amp", "sigma_x", "sigma_y", "center_x", "center_y"]
-    lower_limit_default = {"amp": 0, "sigma": 0, "center_x": -100, "center_y": -100}
-    upper_limit_default = {"amp": 100, "sigma": 100, "center_x": 100, "center_y": 100}
+    lower_limit_default = {
+        "amp": 0,
+        "sigma_x": 0,
+        "sigma_y": 0,
+        "center_x": -100,
+        "center_y": -100,
+    }
+    upper_limit_default = {
+        "amp": 100,
+        "sigma_x": 100,
+        "sigma_y": 100,
+        "center_x": 100,
+        "center_y": 100,
+    }
 
     def function(self, x, y, amp, sigma_x, sigma_y, center_x=0, center_y=0):
         """Returns Gaussian."""

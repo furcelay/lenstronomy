@@ -7,6 +7,7 @@ from lenstronomy.Data.coord_transforms import Coordinates
 from lenstronomy.Plots import plot_util
 from lenstronomy.Analysis.image_reconstruction import ModelBand
 from lenstronomy.LensModel.lens_model import LensModel
+from lenstronomy.ImSim.image_linear_solve import ImageLinearFit, ImageModel
 
 __all__ = ["ModelBandPlot"]
 
@@ -28,6 +29,7 @@ class ModelBandPlot(ModelBand):
         arrow_size=0.02,
         cmap_string="gist_heat",
         fast_caustic=True,
+        linear_solver=True,
     ):
         """
 
@@ -44,6 +46,8 @@ class ModelBandPlot(ModelBand):
         :param arrow_size: size of the scale and orientation arrow
         :param cmap_string: string of color map (or cmap matplotlib object)
         :param fast_caustic: boolean; if True, uses fast (but less accurate) caustic calculation method
+        :param linear_solver: bool, if True (default) fixes the linear amplitude parameters 'amp' (avoid sampling) such
+         that they get overwritten by the linear solver solution.
         """
         ModelBand.__init__(
             self,
@@ -56,6 +60,7 @@ class ModelBandPlot(ModelBand):
             kwargs_params,
             image_likelihood_mask_list=likelihood_mask_list,
             band_index=band_index,
+            linear_solver=linear_solver,
         )
 
         self._lensModel = self._bandmodel.LensModel
@@ -191,6 +196,7 @@ class ModelBandPlot(ModelBand):
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax, orientation="vertical")
         cb.set_label(colorbar_label, fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
         return ax
 
     def model_plot(
@@ -250,6 +256,7 @@ class ModelBandPlot(ModelBand):
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax)
         cb.set_label(colorbar_label, fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
 
         # plot_line_set(ax, self._coords, self._ra_caustic_list, self._dec_caustic_list, color='b')
         # plot_line_set(ax, self._coords, self._ra_crit_list, self._dec_crit_list, color='r')
@@ -326,6 +333,7 @@ class ModelBandPlot(ModelBand):
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax)
         cb.set_label(colorbar_label, fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
         return ax
 
     def substructure_plot(
@@ -342,6 +350,8 @@ class ModelBandPlot(ModelBand):
         with_critical_curves=False,
         crit_curve_color="k",
         image_name_list=None,
+        super_sample_factor=None,
+        add_color_bar=True,
         **kwargs
     ):
         """Plots the convergence of a full lens model minus the convergence from a few
@@ -359,11 +369,14 @@ class ModelBandPlot(ModelBand):
         :param with_critical_curves: bool; plots the critical curves in the frame
         :param crit_curve_color: color of the critical curves
         :param image_name_list: labels the images, default is A, B, C, ...
-        :param kwargs: any additional keyword arguments
-        :return: matplotib axis
+        :param super_sample_factor: a integer the specifies supersampling of the coordinate grid to create the convergence map
+        :param add_color_bar: bool; whether or not to include a color bar
+        :return: matplotib axis and colorbar
         """
+
         kwargs_lens_macro = []
         lens_model_list_macro = []
+        profile_kwargs_list_macro = []
         multi_plane = self._lensModel.multi_plane
         if multi_plane:
             lens_redshift_list = self._lensModel.redshift_list
@@ -380,6 +393,7 @@ class ModelBandPlot(ModelBand):
             kwargs_lens_macro.append(self._kwargs_lens_partial[idx])
             if multi_plane:
                 lens_redshift_list_macro.append(lens_redshift_list[idx])
+            profile_kwargs_list_macro.append(self._lensModel.profile_kwargs_list[idx])
 
         lens_model_macro = LensModel(
             lens_model_list_macro,
@@ -387,18 +401,29 @@ class ModelBandPlot(ModelBand):
             lens_redshift_list=lens_redshift_list_macro,
             z_source=z_source,
             cosmo=cosmo,
+            profile_kwargs_list=profile_kwargs_list_macro,
         )
+
+        if super_sample_factor is None:
+            x_grid = self._x_grid
+            y_grid = self._y_grid
+        else:
+            x_grid, y_grid = util.make_subgrid(
+                self._x_grid, self._y_grid, super_sample_factor
+            )
+
         kappa_full = util.array2image(
-            self._lensModel.kappa(self._x_grid, self._y_grid, self._kwargs_lens_partial)
+            self._lensModel.kappa(x_grid, y_grid, self._kwargs_lens_partial)
         )
         kappa_macro = util.array2image(
-            lens_model_macro.kappa(self._x_grid, self._y_grid, kwargs_lens_macro)
+            lens_model_macro.kappa(x_grid, y_grid, kwargs_lens_macro)
         )
         residual_kappa = kappa_full - kappa_macro
         if subtract_mean:
             mean_kappa = np.mean(residual_kappa)
             residual_kappa -= mean_kappa
             colorbar_label = r"$\kappa_{\rm{sub}} - \langle \kappa_{\rm{sub}} \rangle$"
+        alpha = 1.0
         im = ax.imshow(
             residual_kappa,
             origin="lower",
@@ -406,6 +431,7 @@ class ModelBandPlot(ModelBand):
             vmax=v_max,
             extent=self._image_extent,
             cmap=cmap,
+            alpha=alpha,
         )
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
@@ -456,12 +482,15 @@ class ModelBandPlot(ModelBand):
             plot_out_of_image=False,
         )
 
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        cb = plt.colorbar(im, cax=cax)
-        cb.set_label(colorbar_label, fontsize=font_size)
-
-        return ax
+        if add_color_bar:
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            cb = plt.colorbar(im, cax=cax)
+            cb.set_label(colorbar_label, fontsize=font_size)
+            cb.ax.tick_params(labelsize=font_size)
+        else:
+            cb = None
+        return ax, cb
 
     def normalized_residual_plot(
         self,
@@ -492,7 +521,7 @@ class ModelBandPlot(ModelBand):
             vmax=v_max,
             extent=self._image_extent,
             origin="lower",
-            **kwargs
+            **kwargs,
         )
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
@@ -522,6 +551,7 @@ class ModelBandPlot(ModelBand):
             cax = divider.append_axes("right", size="5%", pad=0.05)
             cb = plt.colorbar(im, cax=cax)
             cb.set_label(colorbar_label, fontsize=font_size)
+            cb.ax.tick_params(labelsize=font_size)
         return ax
 
     def absolute_residual_plot(
@@ -531,7 +561,7 @@ class ModelBandPlot(ModelBand):
         v_max=1,
         font_size=15,
         text="Residuals",
-        colorbar_label=r"(f$_{model}$-f$_{data}$)",
+        colorbar_label=r"(f$_{\rm model}$-f$_{\rm data}$)",
     ):
         """
 
@@ -572,6 +602,7 @@ class ModelBandPlot(ModelBand):
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax)
         cb.set_label(colorbar_label, fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
         return ax
 
     def source(self, numPix, deltaPix, center=None, image_orientation=True):
@@ -661,9 +692,7 @@ class ModelBandPlot(ModelBand):
         d_s = numPix * deltaPix_source
         source, coords_source = self.source(numPix, deltaPix_source, center=center)
         if plot_scale == "log":
-            source[source < 10**v_min] = 10 ** (
-                v_min
-            )  # to remove weird shadow in plot
+            source[source < 10**v_min] = 10 ** (v_min)  # to remove weird shadow in plot
             source_scale = np.log10(source)
         elif plot_scale == "linear":
             source_scale = source
@@ -692,6 +721,7 @@ class ModelBandPlot(ModelBand):
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax)
         cb.set_label(colorbar_label, fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
 
         if with_caustics is True:
             ra_caustic_list, dec_caustic_list = self._caustics()
@@ -710,7 +740,7 @@ class ModelBandPlot(ModelBand):
                 dec_caustic_list,
                 color=caustic_color,
                 points_only=self._caustic_points_only,
-                **kwargs.get("kwargs_caustic", {})
+                **kwargs.get("kwargs_caustic", {}),
             )
         if scale_size > 0:
             plot_util.scale_bar(
@@ -791,12 +821,12 @@ class ModelBandPlot(ModelBand):
             ra_at_xy_0=x_grid_source[0],
             dec_at_xy_0=y_grid_source[0],
         )
-        error_map_source = self._bandmodel.error_map_source(
+        error_map_source = ImageLinearFit.error_map_source(
+            self._bandmodel,
             self._kwargs_source_partial,
             x_grid_source,
             y_grid_source,
             self._cov_param,
-            model_index_select=False,
         )
         error_map_source = util.array2image(error_map_source)
         d_s = numPix * deltaPix_source
@@ -820,6 +850,7 @@ class ModelBandPlot(ModelBand):
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax)
         cb.set_label(r"error variance", fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
         if with_caustics:
             ra_caustic_list, dec_caustic_list = self._caustics()
             plot_util.plot_line_set(
@@ -898,7 +929,7 @@ class ModelBandPlot(ModelBand):
             extent=self._image_extent,
             vmin=v_min,
             vmax=v_max,
-            **kwargs
+            **kwargs,
         )
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
@@ -927,6 +958,7 @@ class ModelBandPlot(ModelBand):
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax)
         cb.set_label(colorbar_label, fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
         ra_image, dec_image = self._bandmodel.PointSource.image_position(
             self._kwargs_ps_partial, self._kwargs_lens_partial
         )
@@ -1002,6 +1034,7 @@ class ModelBandPlot(ModelBand):
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax)
         cb.set_label(colorbar_label, fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
         if with_caustics is True:
             ra_crit_list, dec_crit_list = self._critical_curves()
             ra_caustic_list, dec_caustic_list = self._caustics()
@@ -1045,22 +1078,28 @@ class ModelBandPlot(ModelBand):
         font_size=15,
         source_add=False,
         lens_light_add=False,
+        no_arrow=False,
         **kwargs
     ):
-        """
+        """Make a plot displaying all or a subset of light components.
 
-        :param ax:
-        :param text:
-        :param v_min:
-        :param v_max:
-        :param unconvolved:
-        :param point_source_add:
-        :param source_add:
-        :param lens_light_add:
+        :param ax: an instance of matplotlib.axes.Axes
+        :param text: text to display in upper left corner
+        :param v_min: min color scale for matshow plot
+        :param v_max: max color scale for matshow plot
+        :param unconvolved: bool, if True, does not perform PSF convolution on the image
+        :param point_source_add: bool, if True, includes the lensed point source(s) in
+            the plot
+        :param source_add: bool, if True, includes the lensed image of the source in the
+            plot
+        :param lens_light_add: bool, if True, includes the lens light in the plot
+        :param no_arrow: bool, if True, omits the North/East directional arrows from the
+            plot
         :param kwargs: kwargs to send matplotlib.pyplot.matshow()
-        :return:
+        :return: the instance of matplotlib.axes.Axes
         """
-        model = self._bandmodel.image(
+        model = ImageModel.image(
+            self._bandmodel,
             self._kwargs_lens_partial,
             self._kwargs_source_partial,
             self._kwargs_lens_light_partial,
@@ -1084,7 +1123,7 @@ class ModelBandPlot(ModelBand):
             vmin=v_min,
             vmax=v_max,
             extent=self._image_extent,
-            **kwargs
+            **kwargs,
         )
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
@@ -1095,17 +1134,20 @@ class ModelBandPlot(ModelBand):
         plot_util.text_description(
             ax, self._frame_size, text=text, color="w", backgroundcolor="k"
         )
-        plot_util.coordinate_arrows(
-            ax,
-            self._frame_size,
-            self._coords,
-            arrow_size=self._arrow_size,
-            font_size=font_size,
-        )
+        if no_arrow is False:
+            plot_util.coordinate_arrows(
+                ax,
+                self._frame_size,
+                self._coords,
+                color="w",
+                arrow_size=self._arrow_size,
+                font_size=font_size,
+            )
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax)
         cb.set_label(r"log$_{10}$ flux", fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
         return ax
 
     def subtract_from_data_plot(
@@ -1119,7 +1161,8 @@ class ModelBandPlot(ModelBand):
         lens_light_add=False,
         font_size=15,
     ):
-        model = self._bandmodel.image(
+        model = ImageModel.image(
+            self._bandmodel,
             self._kwargs_lens_partial,
             self._kwargs_source_partial,
             self._kwargs_lens_light_partial,
@@ -1167,6 +1210,7 @@ class ModelBandPlot(ModelBand):
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cb = plt.colorbar(im, cax=cax)
         cb.set_label(r"log$_{10}$ flux", fontsize=font_size)
+        cb.ax.tick_params(labelsize=font_size)
         return ax
 
     def plot_main(self, with_caustics=False):
@@ -1272,8 +1316,10 @@ class ModelBandPlot(ModelBand):
         :param v_max:
         :return:
         """
-        model = self._bandmodel._extinction_map(
-            self._kwargs_extinction_partial, self._kwargs_special_partial
+        model = ImageModel.extinction_map(
+            self._bandmodel,
+            self._kwargs_extinction_partial,
+            self._kwargs_special_partial,
         )
         if v_min is None:
             v_min = 0
@@ -1286,6 +1332,6 @@ class ModelBandPlot(ModelBand):
             vmin=v_min,
             vmax=v_max,
             extent=self._image_extent,
-            **kwargs
+            **kwargs,
         )
         return ax

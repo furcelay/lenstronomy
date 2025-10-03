@@ -5,6 +5,7 @@ from lenstronomy.Util import mask_util as mask_util
 import lenstronomy.Util.multi_gauss_expansion as mge
 from lenstronomy.Util import analysis_util
 from lenstronomy.LensModel.lens_model_extensions import LensModelExtensions
+import lenstronomy.Util.constants as const
 
 __all__ = ["LensProfileAnalysis"]
 
@@ -70,7 +71,7 @@ class LensProfileAnalysis(object):
         )
 
     def effective_einstein_radius(
-        self, kwargs_lens, r_min=1e-3, r_max=1e1, num_points=30
+        self, kwargs_lens, r_min=1e-3, r_max=1e1, num_points=30, spherical_model=False
     ):
         """Numerical estimate of the Einstein radius with integral approximation of
         radial convergence profile.
@@ -80,26 +81,55 @@ class LensProfileAnalysis(object):
         :param r_max: maximum radius of the convergence integrand (should be larger than
             Einstein radius)
         :param num_points: number of radial points in log spacing
+        :param spherical_model: if True, assumes the model is spherical and only
+            calculates the convergence along one axis (for speed improvements)
         :return: estimate of the Einstein radius
         """
         r_array = np.logspace(np.log10(r_min), np.log10(r_max), num_points)
+        if spherical_model is True:
+            num_azimuthal_points = 1
+        else:
+            num_azimuthal_points = 10
 
         # Define the integrand function for the 1D numerical integration: this is the surface mass density
         # kappa at a given radius r, multiplied by 2*pi*r to account for the circular geometry.
-        kappa_r = self.radial_lens_profile(r_array, kwargs_lens, center_x=0, center_y=0)
+        kappa_r = self.radial_lens_profile(
+            r_array,
+            kwargs_lens,
+            center_x=None,
+            center_y=None,
+            num_azimuthal_points=num_azimuthal_points,
+        )
+
+        return self.effective_einstein_radius_from_radial_profile(r_array, kappa_r)
+
+    @staticmethod
+    def effective_einstein_radius_from_radial_profile(r_array, kappa_r):
+        """Numerical estimate of the Einstein radius with integral approximation of
+        radial convergence profile.
+
+        :param r_array: radius at which convergence is measured
+        :param kappa_r: convergence array measured at r_array
+        :return: estimate of the Einstein radius
+        """
+        r_min = r_array.min()
+        r_max = r_array.max()
+        num_points = len(r_array)
+        kappa_r = np.array(kappa_r)
+        kappa_r[kappa_r <= 0] = 10 ** (-100)
 
         # here we make a finer grid interpolation in log-log space
         k_interp = scipy.interpolate.interp1d(np.log10(r_array), np.log10(kappa_r))
-        r_array = np.logspace(np.log10(r_min), np.log10(r_max), num_points * 10)
-        kappa_r = 10 ** k_interp(np.log10(r_array))
+        r_array_fine = np.geomspace(r_min, r_max, 10 * num_points)
+        kappa_r = 10 ** k_interp(np.log10(r_array_fine))
 
         # we perform the integral in logarithmic steps of the convergence
         kappa_r = np.array(kappa_r)
         kappa_r_ = (kappa_r[1:] + kappa_r[:-1]) / 2
-        r_array_ = (r_array[1:] + r_array[:-1]) / 2
-        dlog_r = (np.log10(r_array[2]) - np.log10(r_array[1])) * np.log(10)
+        r_array_ = (r_array_fine[1:] + r_array_fine[:-1]) / 2
+        dlog_r = (np.log10(r_array_fine[2]) - np.log10(r_array_fine[1])) * np.log(10)
         # add the mass within the innermost bin and assume it's constant
-        kappa_innermost = kappa_r[0] * np.pi * r_array[0] ** 2
+        kappa_innermost = kappa_r[0] * np.pi * r_array_fine[0] ** 2
 
         # the first part is the logarithmic integrand, the second part the circle integrand
         kappa_slice = kappa_r_ * dlog_r * r_array_ * (2 * np.pi * r_array_)
@@ -107,12 +137,12 @@ class LensProfileAnalysis(object):
 
         kappa_cdf = np.cumsum(kappa_slice)
         # calculate average convergence at radius
-        kappa_average = kappa_cdf / (np.pi * r_array**2)
+        kappa_average = kappa_cdf / (np.pi * r_array_fine**2)
 
         # we interpolate as the inverse function and evaluate this function for average kappa = 1
         # (assumes monotonic decline in average convergence)
         inv_interp = scipy.interpolate.interp1d(
-            np.log10(kappa_average), np.log10(r_array)
+            np.log10(kappa_average), np.log10(r_array_fine)
         )
         try:
             theta_e = 10 ** inv_interp(0)
@@ -152,6 +182,7 @@ class LensProfileAnalysis(object):
         center_y=None,
         model_list_bool=None,
         num_points=10,
+        alpha_differentials=True,
     ):
         """Computes the logarithmic power-law slope of a profile. ATTENTION: this is not
         an observable!
@@ -163,6 +194,9 @@ class LensProfileAnalysis(object):
         :param center_y: center of profile from where to compute the slope
         :param model_list_bool: bool list, indicate which part of the model to consider
         :param num_points: number of estimates around the Einstein radius
+        :param alpha_differentials: if True, uses the deflection angle differentials,
+            else the convergence differentials
+        :type alpha_differentials: bool
         :return: logarithmic power-law slope
         """
         center_x, center_y = analysis_util.profile_center(
@@ -172,16 +206,28 @@ class LensProfileAnalysis(object):
         dr = 0.01
         x_dr, y_dr = util.points_on_circle(radius + dr, num_points)
 
-        alpha_E_x_i, alpha_E_y_i = self._lens_model.alpha(
-            center_x + x, center_y + y, kwargs_lens, k=model_list_bool
-        )
-        alpha_E_r = np.sqrt(alpha_E_x_i**2 + alpha_E_y_i**2)
-        alpha_E_dr_x_i, alpha_E_dr_y_i = self._lens_model.alpha(
-            center_x + x_dr, center_y + y_dr, kwargs_lens, k=model_list_bool
-        )
-        alpha_E_dr = np.sqrt(alpha_E_dr_x_i**2 + alpha_E_dr_y_i**2)
-        slope = np.mean(np.log(alpha_E_dr / alpha_E_r) / np.log((radius + dr) / radius))
-        gamma = -slope + 2
+        if alpha_differentials:
+            alpha_E_x_i, alpha_E_y_i = self._lens_model.alpha(
+                center_x + x, center_y + y, kwargs_lens, k=model_list_bool
+            )
+            alpha_E_r = np.sqrt(alpha_E_x_i**2 + alpha_E_y_i**2)
+            alpha_E_dr_x_i, alpha_E_dr_y_i = self._lens_model.alpha(
+                center_x + x_dr, center_y + y_dr, kwargs_lens, k=model_list_bool
+            )
+            alpha_E_dr = np.sqrt(alpha_E_dr_x_i**2 + alpha_E_dr_y_i**2)
+            slope = np.mean(
+                np.log(alpha_E_dr / alpha_E_r) / np.log((radius + dr) / radius)
+            )
+            gamma = -slope + 2
+        else:
+            kappa = self._lens_model.kappa(
+                center_x + x, center_y + y, kwargs_lens, k=model_list_bool
+            )
+            kappa_dr = self._lens_model.kappa(
+                center_x + x_dr, center_y + y_dr, kwargs_lens, k=model_list_bool
+            )
+            slope = np.mean(np.log(kappa_dr / kappa) / np.log((radius + dr) / radius))
+            gamma = -slope + 1
         return gamma
 
     def mst_invariant_differential(
@@ -235,7 +281,13 @@ class LensProfileAnalysis(object):
         return xi
 
     def radial_lens_profile(
-        self, r_list, kwargs_lens, center_x=None, center_y=None, model_bool_list=None
+        self,
+        r_list,
+        kwargs_lens,
+        center_x=None,
+        center_y=None,
+        model_bool_list=None,
+        num_azimuthal_points=20,
     ):
         """
 
@@ -244,6 +296,8 @@ class LensProfileAnalysis(object):
         :param center_y: center of the profile
         :param kwargs_lens: lens parameter keyword argument list
         :param model_bool_list: bool list or None, indicating which profiles to sum over
+        :param num_azimuthal_points: number of points equally spaced azimuthally to create an average
+        :type num_azimuthal_points: int
         :return: flux amplitudes at r_list radii azimuthally averaged
         """
         center_x, center_y = analysis_util.profile_center(
@@ -251,7 +305,7 @@ class LensProfileAnalysis(object):
         )
         kappa_list = []
         for r in r_list:
-            x, y = util.points_on_circle(r, num_points=20)
+            x, y = util.points_on_circle(r, num_points=num_azimuthal_points)
             f_r = self._lens_model.kappa(
                 x + center_x, y + center_y, kwargs=kwargs_lens, k=model_bool_list
             )
@@ -330,6 +384,71 @@ class LensProfileAnalysis(object):
         center_x = x_grid[kappa == np.max(kappa)]
         center_y = y_grid[kappa == np.max(kappa)]
         return center_x, center_y
+
+    def m_delta_crit(self, kwargs_lens, z_lens, z_source, cosmo, delta_crit=200):
+        """Calculates the mass enclosed an average of delta_crit above the critical
+        background density.
+
+        :param kwargs_lens: list of lens model dictionary
+        :param z_lens: redshift of the deflector
+        :param z_source: redshift of the source (for lens model conventions)
+        :param cosmo: ~astropy.cosmology instance
+        :param delta_crit: relative overdensity relative to the critical density of the
+            universe
+        :return: m(<delta_crit) [M_sol], r(delta_crit) [arcsec]
+        """
+        from lenstronomy.Cosmo.lens_cosmo import LensCosmo
+
+        lens_cosmo = LensCosmo(cosmo=cosmo, z_lens=z_lens, z_source=z_source)
+        # calculate critical density
+        rho_crit = lens_cosmo.background.rho_crit_z(z=z_lens)  # value in M_sol/Mpc^3
+        # 3d deprojection
+        r = np.logspace(-3, 3, 500)
+        try:
+            m_3d_r = self._lens_model.lens_model.mass_3d(r, kwargs_lens)
+        except:
+            r_array = np.logspace(-3, 3, 200)
+            kappa_s = self.radial_lens_profile(r_array, kwargs_lens)
+            amplitudes, sigmas, norm = mge.mge_1d(r_array, kappa_s, N=20)
+            from lenstronomy.LensModel.Profiles.multi_gaussian import MultiGaussian
+
+            mult_gauss = MultiGaussian()
+            m_3d_r = mult_gauss.mass_3d_lens(R=r, amp=amplitudes, sigma=sigmas)
+
+        m_3d_kg = (
+            m_3d_r
+            * const.arcsec**2
+            * lens_cosmo.dd
+            * lens_cosmo.ds
+            / lens_cosmo.dds
+            * const.Mpc
+            * const.c**2
+            / (4 * np.pi * const.G)
+        )
+        # if you want to have physical units of kg, you need to multiply by this factor:
+        #    const.arcsec ** 2 * self._cosmo.dd * self._cosmo.ds / self._cosmo.dds *
+        #    const.Mpc * const.c ** 2 / (4 * np.pi * const.G)
+        mean_density_r = (
+            m_3d_kg
+            / const.M_sun
+            / (4 / 3 * np.pi * (r * const.arcsec * lens_cosmo.dd) ** 3)
+        )  # in M_sun / Mpc^3
+        delta_crit_r = mean_density_r / rho_crit
+        if delta_crit_r[0] < delta_crit:
+            Warning(
+                "Central density did not exceed %s times critical density." % delta_crit
+            )
+            return 0, 0
+        # invert mean density with radius
+        inv_interp = scipy.interpolate.interp1d(delta_crit_r, r)
+        try:
+            r_delta = inv_interp(delta_crit)
+            r_delta_mpc = r_delta * const.arcsec * lens_cosmo.dd
+            m_delta_crit = rho_crit * delta_crit * (4 / 3 * np.pi * r_delta_mpc**3)
+        except:
+            r_delta = np.nan
+            m_delta_crit = np.nan
+        return m_delta_crit, r_delta
 
 
 def einstein_radius_from_grid(

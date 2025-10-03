@@ -31,6 +31,7 @@ class TestLightModel(object):
             "INTERPOL",
             "SHAPELETS_POLAR_EXP",
             "ELLIPSOID",
+            "LINE_PROFILE",
         ]
         phi_G, q = 0.5, 0.8
         e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
@@ -129,16 +130,25 @@ class TestLightModel(object):
                 "center_x": 0,
                 "center_y": 0,
             },  # 'ELLIPSOID'
+            {
+                "amp": 1,
+                "length": 1.0,
+                "width": 0.01,
+                "angle": 57,
+                "start_x": 0,
+                "start_y": 0,
+            },  # 'LINE_PROFILE'
         ]
 
-        self.LightModel = LightModel(
-            light_model_list=self.light_model_list, sersic_major_axis=False
-        )
+        self.LightModel = LightModel(light_model_list=self.light_model_list)
 
     def test_init(self):
         model_list = [
             "CORE_SERSIC",
+            "SERSIC",
+            "SERSIC_ELLIPSE_FLEXION",
             "SHAPELETS",
+            "LINEAR_ELLIPSE",
             "SHAPELETS_ELLIPSE",
             "SHAPELETS_POLAR",
             "SHAPELETS_POLAR_EXP",
@@ -147,8 +157,17 @@ class TestLightModel(object):
             "DOUBLE_CHAMELEON",
             "TRIPLE_CHAMELEON",
         ]
-        lightModel = LightModel(light_model_list=model_list)
+        profile_kwargs_list = [
+            None,
+            {"sersic_major_axis": False},
+            {"sersic_major_axis": True},
+        ] + [None] * 9
+        lightModel = LightModel(
+            light_model_list=model_list, profile_kwargs_list=profile_kwargs_list
+        )
         assert len(lightModel.profile_type_list) == len(model_list)
+        assert lightModel.func_list[1]._sersic_major_axis == False
+        assert lightModel.func_list[2]._sersic_major_axis == True
 
     def test_surface_brightness(self):
         output = self.LightModel.surface_brightness(
@@ -176,7 +195,7 @@ class TestLightModel(object):
 
     def test_num_param_linear(self):
         num = self.LightModel.num_param_linear(self.kwargs, list_return=False)
-        assert num == 19
+        assert num == 20
 
         num_list = self.LightModel.num_param_linear(self.kwargs, list_return=True)
         assert num_list[0] == 1
@@ -199,6 +218,7 @@ class TestLightModel(object):
             "GAUSSIAN_ELLIPSE",
             "MULTI_GAUSSIAN",
             "MULTI_GAUSSIAN_ELLIPSE",
+            "LINE_PROFILE",
         ]
         kwargs_list = [
             {
@@ -247,6 +267,14 @@ class TestLightModel(object):
                 "center_x": 0,
                 "center_y": 0,
             },  # 'MULTI_GAUSSIAN_ELLIPSE'
+            {
+                "amp": 1,
+                "length": 1.0,
+                "width": 0.01,
+                "angle": 57,
+                "start_x": 0,
+                "start_y": 0,
+            },  # 'LINE_PROFILE'
         ]
         lightModel = LightModel(light_model_list=light_model_list)
         total_flux_list = lightModel.total_flux(kwargs_list)
@@ -291,6 +319,24 @@ class TestLightModel(object):
         kwargs_list = [{"amp": -1, "sigma": 1}]
         bool = ligthModel.check_positive_flux_profile(kwargs_list)
         assert not bool
+
+    def test_check_parameters(self):
+        lightModel = LightModel(light_model_list=["GAUSSIAN"])
+        kwargs_list = [{"amp": 0, "sigma": 1, "center_x": 0, "center_y": 0}]
+
+        lightModel.check_parameters(kwargs_list)
+        kwargs_list_add = [
+            {"amp": 0, "sigma": 1, "center_x": 0, "center_y": 0, "bad": 1}
+        ]
+        kwargs_list_remove = [{"amp": 0, "center_x": 0, "center_y": 0}]
+        kwargs_list_too_long = [
+            {"amp": 0, "sigma": 1, "center_x": 0, "center_y": 0},
+            {},
+        ]
+
+        npt.assert_raises(ValueError, lightModel.check_parameters, kwargs_list_add)
+        npt.assert_raises(ValueError, lightModel.check_parameters, kwargs_list_remove)
+        npt.assert_raises(ValueError, lightModel.check_parameters, kwargs_list_too_long)
 
 
 class TestRaise(unittest.TestCase):

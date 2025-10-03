@@ -358,4 +358,93 @@ History
 1.11.5 (2023-09-28)
 +++++++++++++++++++
 * bug fix in findOverlap function
-* bug fix in luminosity-0weighted celocity dispersion calculation
+* bug fix in luminosity-0weighted velocity dispersion calculation
+
+1.11.6 (2024-01-24)
++++++++++++++++++++
+* bug fix with partial kwargs in kwargs_tracer mode
+* stability and documentation improvements
+* name change from GNFW -> PSEUDO_DPL
+* improved plotting of point sources and caustics on top of pixelated images
+* RADIAL_INTERPOL lens profile
+* improved description of how to add new lenses
+* Debug findOverlap parantheses of image_util.py
+
+1.11.7 (2024-02-19)
++++++++++++++++++++
+* numba compatibility improved
+* updated interface with COOLEST
+* updated tracer_model
+* minor deprecation fixes
+
+1.11.8 (2024-03-23)
++++++++++++++++++++
+* faster lens equation solver with constant convergence
+* decoupled multi-plane formalism
+
+1.11.9 (2024-04-05)
++++++++++++++++++++
+* COOLEST format with external convergence implemented
+
+1.11.10 (2024-05-15)
+++++++++++++++++++++
+* bug fix in analytical lens equation solver for SIE+CONVERGENCE
+
+1.12.0 (2024-05-15)
++++++++++++++++++++
+* renamed some lens profiles
+* minor bug fixed for lens equation solver involving multiple EPL profiles
+* FittingSequence allows to store intermediate PSF iteration results
+* minor updates of lens_plot
+* multiple conjugent points in likelihood
+* convenient checking of parameter bounds
+* STARRED PSF iteration procedure
+
+1.12.1 (2024-11-04)
++++++++++++++++++++
+* multi-source plane for point sources implemented
+* change source redshift in LensModel() and LensEquationSolver() implemented
+
+1.12.2 (2024-11-22)
++++++++++++++++++++
+* minor bug fix in analytical lens equation solver
+* progress bar for PSO
+* astropy<7 version for CosmoInterp compatibility
+* minor plotting updates
+
+1.12.3 (2024-11-22)
++++++++++++++++++++
+* more convenient magnitude to amplitude conversion API
+
+1.12.4 (2025-01-28)
++++++++++++++++++++
+* refactoring of ImageModel class
+* renaming of lens models
+
+1.12.5 (2025-02-11)
++++++++++++++++++++
+* bug fix in elliptical shapelets
+* improved point source rendering in plots
+
+1.12.6 (2025-04-23)
++++++++++++++++++++
+* first jaxtronomy integration
+* updated multipole definitions
+* routines for better checking parameters
+* updated documentations for different deflector profiles
+
+1.13.0 (2025-05-06)
++++++++++++++++++++
+* minor bug fix in jaxtronomy integration
+* bug fix in HERNQUIST_ELLIPSE_CSE model
+* better integration of Param() class with lens and light models
+
+1.13.1 (2025-05-27)
++++++++++++++++++++
+* KinematicsAPI improved
+* Custom Solver
+
+1.13.2 (2025-07-17)
++++++++++++++++++++
+* pixelated source reconstruction
+* rectangular PixelGrid bug fix

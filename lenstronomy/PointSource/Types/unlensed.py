@@ -9,7 +9,10 @@ class Unlensed(PSBase):
     class of a single point source in the image plane, aka star
     Name within the PointSource module: 'UNLENSED'
     This model can deal with arrays of point sources.
-    parameters: ra_image, dec_image, point_amp
+    parameters:
+    :param ra_image: list or array of floats
+    :param dec_image: list or array of floats
+    :param point_amp: list or array of floats
 
     """
 

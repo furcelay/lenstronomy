@@ -14,9 +14,11 @@ class SourcePositions(PSBase):
     specified source position.
 
     Name within the PointSource module: 'SOURCE_POSITION'
-    parameters: ra_source, dec_source, source_amp, mag_pert (optional)
-    If fixed_magnification=True, than 'source_amp' is a parameter instead of 'point_amp'
-    mag_pert is a list of fractional magnification pertubations applied to point source images
+    parameters:
+    :param ra_source: float
+    :param dec_source: float
+    :param source_amp: float
+    :param mag_pert: optional list of fractional magnification pertubations applied to point source images
     """
 
     def image_position(
@@ -32,9 +34,9 @@ class SourcePositions(PSBase):
         :param kwargs_ps: keyword arguments of the point source model
         :param kwargs_lens: keyword argument list of the lens model(s), only used when
             requiring the lens equation solver
-        :param magnification_limit: float >0 or None, if float is set and additional
-            images are computed, only those images will be computed that exceed the
-            lensing magnification (absolute value) limit
+        :param magnification_limit: float >0 or None, if float is set, only those images
+            will be computed that exceed the lensing magnification (absolute value)
+            limit
         :param kwargs_lens_eqn_solver: keyword arguments specifying the numerical
             settings for the lens equation solver see LensEquationSolver() class for
             details
@@ -43,6 +45,7 @@ class SourcePositions(PSBase):
         if kwargs_lens_eqn_solver is None:
             kwargs_lens_eqn_solver = {}
         ra_source, dec_source = self.source_position(kwargs_ps)
+        self._solver.change_source_redshift(self._redshift)
         ra_image, dec_image = self._solver.image_position_from_source(
             ra_source,
             dec_source,
@@ -78,15 +81,16 @@ class SourcePositions(PSBase):
             when providing image positions directly
         :param x_pos: pre-computed image position (no lens equation solver applied)
         :param y_pos: pre-computed image position (no lens equation solver applied)
-        :param magnification_limit: float >0 or None, if float is set and additional
-            images are computed, only those images will be computed that exceed the
-            lensing magnification (absolute value) limit
+        :param magnification_limit: float >0 or None, if float is set, only those images
+            will be computed that exceed the lensing magnification (absolute value)
+            limit
         :param kwargs_lens_eqn_solver: keyword arguments specifying the numerical
             settings for the lens equation solver see LensEquationSolver() class for
             details
         :return: array of image amplitudes
         """
         if self._fixed_magnification:
+            self._lens_model.change_source_redshift(self._redshift)
             if x_pos is not None and y_pos is not None:
                 ra_image, dec_image = x_pos, y_pos
             else:
@@ -122,6 +126,7 @@ class SourcePositions(PSBase):
         if self._fixed_magnification:
             source_amp = kwargs_ps["source_amp"]
         else:
+            self._lens_model.change_source_redshift(self._redshift)
             ra_image, dec_image = self.image_position(kwargs_ps, kwargs_lens)
             mag = self._lens_model.magnification(ra_image, dec_image, kwargs_lens)
             point_amp = kwargs_ps["point_amp"]

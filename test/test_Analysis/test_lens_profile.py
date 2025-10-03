@@ -5,7 +5,7 @@ import unittest
 
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.Analysis.lens_profile import LensProfileAnalysis
-from lenstronomy.LensModel.Profiles.multi_gaussian_kappa import MultiGaussianKappa
+from lenstronomy.LensModel.Profiles.multi_gaussian import MultiGaussian
 import lenstronomy.Util.param_util as param_util
 
 
@@ -49,10 +49,16 @@ class TestLensProfileAnalysis(object):
                 "gamma": gamma_in,
             }
         ]
-        gamma_out = lens_model.profile_slope(kwargs_lens, radius=1.45)
+        gamma_out = lens_model.profile_slope(
+            kwargs_lens, radius=1.45, alpha_differentials=True
+        )
+        npt.assert_array_almost_equal(gamma_out, gamma_in, decimal=3)
+        gamma_out = lens_model.profile_slope(
+            kwargs_lens, radius=1.45, alpha_differentials=False
+        )
         npt.assert_array_almost_equal(gamma_out, gamma_in, decimal=3)
 
-    def test_effective_einstein_radius(self):
+    def test_effective_einstein_radius_grid(self):
         kwargs_lens = [{"theta_E": 1, "center_x": 0, "center_y": 0}]
         lensModel = LensProfileAnalysis(LensModel(lens_model_list=["SIS"]))
         ret = lensModel.effective_einstein_radius_grid(kwargs_lens, get_precision=True)
@@ -123,6 +129,19 @@ class TestLensProfileAnalysis(object):
         )
         assert np.isnan(theta_E_subcrit)
 
+    def test_effective_einstein_radius(self):
+        theta_E_true = 1.0
+        kwargs_lens = [{"theta_E": theta_E_true, "center_x": 1, "center_y": 0}]
+        lensModel = LensProfileAnalysis(LensModel(lens_model_list=["SIS"]))
+        theta_e_est = lensModel.effective_einstein_radius(
+            kwargs_lens, r_min=1e-3, r_max=1e1, num_points=30, spherical_model=False
+        )
+        npt.assert_almost_equal(theta_e_est, theta_E_true, decimal=3)
+        theta_e_est = lensModel.effective_einstein_radius(
+            kwargs_lens, r_min=1e-3, r_max=1e1, num_points=30, spherical_model=True
+        )
+        npt.assert_almost_equal(theta_e_est, theta_E_true, decimal=3)
+
     def test_external_lensing_effect(self):
         lens_model_list = ["SHEAR"]
         kwargs_lens = [{"gamma1": 0.1, "gamma2": 0.01}]
@@ -155,7 +174,7 @@ class TestLensProfileAnalysis(object):
         amplitudes, sigmas, center_x, center_y = lensAnalysis.multi_gaussian_lens(
             kwargs_lens, n_comp=20
         )
-        model = MultiGaussianKappa()
+        model = MultiGaussian()
         x = np.logspace(-2, 0.5, 10) + 0.5
         y = np.zeros_like(x) - 0.1
         f_xx, fxy, fyx, f_yy = model.hessian(
@@ -243,6 +262,60 @@ class TestLensProfileAnalysis(object):
                     print(theta_E, gamma, q, "test")
                     xi_true = (gamma - 2) / theta_E_prime
                     npt.assert_almost_equal(xi, xi_true, decimal=2)
+
+    def test_m_delta_crit(self):
+        # test done with NFW profile where M200 is known
+        lensModel = LensModel(**{"lens_model_list": ["NFW"]})
+        profileAnalysis = LensProfileAnalysis(lens_model=lensModel)
+        import lenstronomy.Util.constants as const
+        from astropy.cosmology import FlatLambdaCDM
+
+        cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05)
+        from lenstronomy.Cosmo.lens_cosmo import LensCosmo
+
+        z_lens = 0.5
+        z_source = 2.0
+        lensCosmo = LensCosmo(z_lens=z_lens, z_source=z_source, cosmo=cosmo)
+        M = 10.0**13.5
+        c = 4
+        Rs_angle, alpha_Rs = lensCosmo.nfw_physical2angle(M, c)
+        rho0, Rs, c_out, r200, M200 = lensCosmo.nfw_angle2physical(Rs_angle, alpha_Rs)
+        kwargs_lens = [{"alpha_Rs": alpha_Rs, "Rs": Rs_angle}]
+        print(r200, "test r200")
+        m200_out, r200_out = profileAnalysis.m_delta_crit(
+            kwargs_lens, z_lens, z_source, cosmo, delta_crit=200
+        )
+        r200_out_mpc = r200_out * const.arcsec * lensCosmo.dd
+        npt.assert_almost_equal(M200 / M, 1, decimal=3)
+        npt.assert_almost_equal(m200_out / M, 1, decimal=3)
+        npt.assert_almost_equal(r200_out_mpc, r200, decimal=3)
+
+        # here a profile that does not have an M200
+        lensModel = LensModel(**{"lens_model_list": ["GAUSSIAN"]})
+        kwargs_lens = [{"amp": 0.01, "sigma": 100, "center_x": 0, "center_y": 0}]
+        profileAnalysis = LensProfileAnalysis(lens_model=lensModel)
+        m200_out, r200_out = profileAnalysis.m_delta_crit(
+            kwargs_lens, z_lens, z_source, cosmo, delta_crit=200
+        )
+        assert m200_out == 0
+        assert r200_out == 0
+
+        m200_out, r200_out = profileAnalysis.m_delta_crit(
+            kwargs_lens, z_lens, z_source, cosmo, delta_crit=-200
+        )
+        assert np.isnan(m200_out)
+        assert np.isnan(r200_out)
+
+        # profile that does not have analytical mass_3d
+        lensModel = LensModel(**{"lens_model_list": ["SERSIC"]})
+        kwargs_lens = [
+            {"k_eff": 1, "R_sersic": 2, "n_sersic": 1, "center_x": 0, "center_y": 0}
+        ]
+        profileAnalysis = LensProfileAnalysis(lens_model=lensModel)
+        m200_out, r200_out = profileAnalysis.m_delta_crit(
+            kwargs_lens, z_lens, z_source, cosmo, delta_crit=200
+        )
+        npt.assert_almost_equal(m200_out / 3827526804710.1196, 1, decimal=1)
 
 
 class TestRaise(unittest.TestCase):

@@ -18,31 +18,6 @@ class LinearBasis(LightModelBase):
         """
         super(LinearBasis, self).__init__(**kwargs)
 
-    @property
-    def param_name_list(self):
-        """Returns the list of all parameter names.
-
-        :return: list of list of strings (for each light model separately)
-        """
-        name_list = []
-        for i, func in enumerate(self.func_list):
-            name_list.append(func.param_names)
-        return name_list
-
-    @property
-    def param_name_list_latex(self):
-        """Returns the list of all parameter names in LateX style.
-
-        :return: list of list of strings (for each light model separately)
-        """
-        name_list = []
-        for i, func in enumerate(self.func_list):
-            if hasattr(func, "param_names_latex"):
-                name_list.append(func.param_names_latex)
-            else:
-                name_list.append(func.param_names)
-        return name_list
-
     def functions_split(self, x, y, kwargs_list, k=None):
         """Split model in different components.
 
@@ -57,26 +32,28 @@ class LinearBasis(LightModelBase):
         for i, model in enumerate(self.profile_type_list):
             if bool_list[i] is True:
                 if model in [
-                    "SERSIC",
-                    "SERSIC_ELLIPSE",
-                    "SERSIC_ELLIPSE_Q_PHI",
+                    "CHAMELEON",
                     "CORE_SERSIC",
-                    "HERNQUIST",
-                    "HERNQUIST_ELLIPSE",
-                    "PJAFFE",
-                    "PJAFFE_ELLIPSE",
+                    "DOUBLE_CHAMELEON",
+                    "ELLIPSOID",
                     "GAUSSIAN",
                     "GAUSSIAN_ELLIPSE",
-                    "POWER_LAW",
-                    "NIE",
-                    "CHAMELEON",
-                    "DOUBLE_CHAMELEON",
-                    "TRIPLE_CHAMELEON",
-                    "UNIFORM",
+                    "HERNQUIST",
+                    "HERNQUIST_ELLIPSE",
                     "INTERPOL",
-                    "ELLIPSOID",
                     "LINEAR",
                     "LINEAR_ELLIPSE",
+                    "LINE_PROFILE",
+                    "NIE",
+                    "PJAFFE",
+                    "PJAFFE_ELLIPSE",
+                    "POWER_LAW",
+                    "SERSIC",
+                    "SERSIC_ELLIPSE",
+                    "SERSIC_ELLIPSE_FLEXION",
+                    "SERSIC_ELLIPSE_Q_PHI",
+                    "TRIPLE_CHAMELEON",
+                    "UNIFORM",
                 ]:
                     kwargs_new = kwargs_list[i].copy()
                     new = {"amp": 1}
@@ -84,7 +61,7 @@ class LinearBasis(LightModelBase):
                     response += [self.func_list[i].function(x, y, **kwargs_new)]
                     n += 1
                 elif model in ["MULTI_GAUSSIAN", "MULTI_GAUSSIAN_ELLIPSE"]:
-                    num = len(kwargs_list[i]["amp"])
+                    num = len(kwargs_list[i]["sigma"])
                     new = {"amp": np.ones(num)}
                     kwargs_new = kwargs_list[i].copy()
                     kwargs_new.update(new)
@@ -137,25 +114,27 @@ class LinearBasis(LightModelBase):
         n_list = []
         for i, model in enumerate(self.profile_type_list):
             if model in [
-                "SERSIC",
-                "SERSIC_ELLIPSE",
+                "CHAMELEON",
                 "CORE_SERSIC",
-                "HERNQUIST",
-                "HERNQUIST_ELLIPSE",
-                "PJAFFE",
-                "PJAFFE_ELLIPSE",
+                "DOUBLE_CHAMELEON",
+                "ELLIPSOID",
                 "GAUSSIAN",
                 "GAUSSIAN_ELLIPSE",
-                "POWER_LAW",
-                "NIE",
-                "CHAMELEON",
-                "DOUBLE_CHAMELEON",
-                "TRIPLE_CHAMELEON",
-                "UNIFORM",
+                "HERNQUIST",
+                "HERNQUIST_ELLIPSE",
                 "INTERPOL",
-                "ELLIPSOID",
                 "LINEAR",
                 "LINEAR_ELLIPSE",
+                "LINE_PROFILE",
+                "NIE",
+                "PJAFFE",
+                "PJAFFE_ELLIPSE",
+                "POWER_LAW",
+                "SERSIC",
+                "SERSIC_ELLIPSE",
+                "SERSIC_ELLIPSE_FLEXION",
+                "TRIPLE_CHAMELEON",
+                "UNIFORM",
             ]:
                 n_list += [1]
             elif model in ["MULTI_GAUSSIAN", "MULTI_GAUSSIAN_ELLIPSE"]:
@@ -195,26 +174,28 @@ class LinearBasis(LightModelBase):
         """
         for k, model in enumerate(self.profile_type_list):
             if model in [
-                "SERSIC",
-                "SERSIC_ELLIPSE",
-                "SERSIC_ELLIPSE_Q_PHI",
+                "CHAMELEON",
                 "CORE_SERSIC",
-                "HERNQUIST",
-                "PJAFFE",
-                "PJAFFE_ELLIPSE",
-                "HERNQUIST_ELLIPSE",
+                "DOUBLE_CHAMELEON",
+                "ELLIPSOID",
                 "GAUSSIAN",
                 "GAUSSIAN_ELLIPSE",
-                "POWER_LAW",
-                "NIE",
-                "CHAMELEON",
-                "DOUBLE_CHAMELEON",
-                "TRIPLE_CHAMELEON",
-                "UNIFORM",
+                "HERNQUIST",
+                "HERNQUIST_ELLIPSE",
                 "INTERPOL",
-                "ELLIPSOID",
                 "LINEAR",
                 "LINEAR_ELLIPSE",
+                "LINE_PROFILE",
+                "NIE",
+                "PJAFFE",
+                "PJAFFE_ELLIPSE",
+                "POWER_LAW",
+                "SERSIC",
+                "SERSIC_ELLIPSE",
+                "SERSIC_ELLIPSE_FLEXION",
+                "SERSIC_ELLIPSE_Q_PHI",
+                "TRIPLE_CHAMELEON",
+                "UNIFORM",
             ]:
                 kwargs_list[k]["amp"] = param[i]
                 i += 1
@@ -224,9 +205,9 @@ class LinearBasis(LightModelBase):
                 i += num_param
             elif model in [
                 "SHAPELETS",
+                "SHAPELETS_ELLIPSE",
                 "SHAPELETS_POLAR",
                 "SHAPELETS_POLAR_EXP",
-                "SHAPELETS_ELLIPSE",
             ]:
                 n_max = kwargs_list[k]["n_max"]
                 if model in ["SHAPELETS_POLAR_EXP"]:
@@ -290,19 +271,20 @@ class LinearBasis(LightModelBase):
         for k, model in enumerate(self.profile_type_list):
             if "amp" in kwargs_list[k]:
                 if model in [
-                    "SERSIC",
-                    "SERSIC_ELLIPSE",
+                    "CHAMELEON",
                     "CORE_SERSIC",
-                    "HERNQUIST",
-                    "PJAFFE",
-                    "PJAFFE_ELLIPSE",
-                    "HERNQUIST_ELLIPSE",
+                    "DOUBLE_CHAMELEON",
                     "GAUSSIAN",
                     "GAUSSIAN_ELLIPSE",
-                    "POWER_LAW",
+                    "HERNQUIST",
+                    "HERNQUIST_ELLIPSE",
                     "NIE",
-                    "CHAMELEON",
-                    "DOUBLE_CHAMELEON",
+                    "PJAFFE",
+                    "PJAFFE_ELLIPSE",
+                    "POWER_LAW",
+                    "SERSIC",
+                    "SERSIC_ELLIPSE",
+                    "SERSIC_ELLIPSE_FLEXION",
                 ]:
                     if kwargs_list[k]["amp"] < 0:
                         pos_bool = False

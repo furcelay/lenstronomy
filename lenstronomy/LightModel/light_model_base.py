@@ -4,10 +4,7 @@ __author__ = "sibirrer"
 
 import numpy as np
 from lenstronomy.Util.util import convert_bool_list
-from lenstronomy.Conf import config_loader
 
-convention_conf = config_loader.conventions_conf()
-sersic_major_axis_conf = convention_conf.get("sersic_major_axis", False)
 
 __all__ = ["LightModelBase"]
 
@@ -20,6 +17,7 @@ _MODELS_SUPPORTED = [
     "MULTI_GAUSSIAN_ELLIPSE",
     "SERSIC",
     "SERSIC_ELLIPSE",
+    "SERSIC_ELLIPSE_FLEXION",
     "SERSIC_ELLIPSE_Q_PHI",
     "CORE_SERSIC",
     "SHAPELETS",
@@ -41,158 +39,169 @@ _MODELS_SUPPORTED = [
     "SLIT_STARLETS_GEN2",
     "LINEAR",
     "LINEAR_ELLIPSE",
+    "LINE_PROFILE",
 ]
 
 
 class LightModelBase(object):
     """Class to handle source and lens light models."""
 
-    def __init__(self, light_model_list, smoothing=0.001, sersic_major_axis=None):
+    def __init__(self, light_model_list, profile_kwargs_list=None):
         """
 
         :param light_model_list: list of light models
-        :param smoothing: smoothing factor for certain models (deprecated)
-        :param sersic_major_axis: boolean or None, if True, uses the semi-major axis as the definition of the Sersic
-         half-light radius, if False, uses the product average of semi-major and semi-minor axis. If None, uses the
-         convention in the lenstronomy yaml setting (which by default is =False)
+        :param profile_kwargs_list: list of dicts, keyword arguments used to initialize light model
+            profile classes in the same order of the light_model_list. If any of the profile_kwargs
+            are None, then that profile will be initialized using default settings.
         """
         self.profile_type_list = light_model_list
         self.func_list = []
-        if sersic_major_axis is None:
-            sersic_major_axis = sersic_major_axis_conf
-        for profile_type in light_model_list:
+        if profile_kwargs_list is None:
+            profile_kwargs_list = [{} for _ in range(len(light_model_list))]
+
+        for profile_type, profile_kwargs in zip(light_model_list, profile_kwargs_list):
+            if profile_kwargs is None:
+                profile_kwargs = {}
             if profile_type == "GAUSSIAN":
                 from lenstronomy.LightModel.Profiles.gaussian import Gaussian
 
-                self.func_list.append(Gaussian())
+                self.func_list.append(Gaussian(**profile_kwargs))
             elif profile_type == "GAUSSIAN_ELLIPSE":
                 from lenstronomy.LightModel.Profiles.gaussian import GaussianEllipse
 
-                self.func_list.append(GaussianEllipse())
+                self.func_list.append(GaussianEllipse(**profile_kwargs))
             elif profile_type == "ELLIPSOID":
                 from lenstronomy.LightModel.Profiles.ellipsoid import Ellipsoid
 
-                self.func_list.append(Ellipsoid())
+                self.func_list.append(Ellipsoid(**profile_kwargs))
             elif profile_type == "MULTI_GAUSSIAN":
                 from lenstronomy.LightModel.Profiles.gaussian import MultiGaussian
 
-                self.func_list.append(MultiGaussian())
+                self.func_list.append(MultiGaussian(**profile_kwargs))
             elif profile_type == "MULTI_GAUSSIAN_ELLIPSE":
                 from lenstronomy.LightModel.Profiles.gaussian import (
                     MultiGaussianEllipse,
                 )
 
-                self.func_list.append(MultiGaussianEllipse())
+                self.func_list.append(MultiGaussianEllipse(**profile_kwargs))
             elif profile_type == "SERSIC":
                 from lenstronomy.LightModel.Profiles.sersic import Sersic
 
-                self.func_list.append(Sersic(smoothing=smoothing))
+                self.func_list.append(Sersic(**profile_kwargs))
             elif profile_type == "SERSIC_ELLIPSE":
                 from lenstronomy.LightModel.Profiles.sersic import SersicElliptic
 
-                self.func_list.append(
-                    SersicElliptic(
-                        smoothing=smoothing, sersic_major_axis=sersic_major_axis
-                    )
-                )
+                self.func_list.append(SersicElliptic(**profile_kwargs))
             elif profile_type == "SERSIC_ELLIPSE_Q_PHI":
                 from lenstronomy.LightModel.Profiles.sersic import SersicElliptic_qPhi
 
-                self.func_list.append(
-                    SersicElliptic_qPhi(
-                        smoothing=smoothing, sersic_major_axis=sersic_major_axis
-                    )
+                self.func_list.append(SersicElliptic_qPhi(**profile_kwargs))
+
+            elif profile_type == "SERSIC_ELLIPSE_FLEXION":
+                from lenstronomy.LightModel.Profiles.sersic_ellipse_with_flexion import (
+                    SersicEllipseWithFlexion,
                 )
+
+                self.func_list.append(SersicEllipseWithFlexion(**profile_kwargs))
+
             elif profile_type == "CORE_SERSIC":
                 from lenstronomy.LightModel.Profiles.sersic import CoreSersic
 
-                self.func_list.append(
-                    CoreSersic(smoothing=smoothing, sersic_major_axis=sersic_major_axis)
-                )
+                self.func_list.append(CoreSersic(**profile_kwargs))
+
             elif profile_type == "SHAPELETS":
                 from lenstronomy.LightModel.Profiles.shapelets import ShapeletSet
 
-                self.func_list.append(ShapeletSet())
+                self.func_list.append(ShapeletSet(**profile_kwargs))
             elif profile_type == "SHAPELETS_ELLIPSE":
                 from lenstronomy.LightModel.Profiles.shapelets_ellipse import (
                     ShapeletSetEllipse,
                 )
 
-                self.func_list.append(ShapeletSetEllipse())
+                self.func_list.append(ShapeletSetEllipse(**profile_kwargs))
             elif profile_type == "SHAPELETS_POLAR":
                 from lenstronomy.LightModel.Profiles.shapelets_polar import (
                     ShapeletSetPolar,
                 )
 
-                self.func_list.append(ShapeletSetPolar(exponential=False))
+                profile_kwargs["exponential"] = False
+                self.func_list.append(ShapeletSetPolar(**profile_kwargs))
             elif profile_type == "SHAPELETS_POLAR_EXP":
                 from lenstronomy.LightModel.Profiles.shapelets_polar import (
                     ShapeletSetPolar,
                 )
 
-                self.func_list.append(ShapeletSetPolar(exponential=True))
+                profile_kwargs["exponential"] = True
+                self.func_list.append(ShapeletSetPolar(**profile_kwargs))
             elif profile_type == "HERNQUIST":
                 from lenstronomy.LightModel.Profiles.hernquist import Hernquist
 
-                self.func_list.append(Hernquist())
+                self.func_list.append(Hernquist(**profile_kwargs))
             elif profile_type == "HERNQUIST_ELLIPSE":
                 from lenstronomy.LightModel.Profiles.hernquist import HernquistEllipse
 
-                self.func_list.append(HernquistEllipse())
+                self.func_list.append(HernquistEllipse(**profile_kwargs))
             elif profile_type == "PJAFFE":
-                from lenstronomy.LightModel.Profiles.p_jaffe import PJaffe
+                from lenstronomy.LightModel.Profiles.pseudo_jaffe import PseudoJaffe
 
-                self.func_list.append(PJaffe())
+                self.func_list.append(PseudoJaffe(**profile_kwargs))
             elif profile_type == "PJAFFE_ELLIPSE":
-                from lenstronomy.LightModel.Profiles.p_jaffe import PJaffeEllipse
+                from lenstronomy.LightModel.Profiles.pseudo_jaffe import (
+                    PseudoJaffeEllipse,
+                )
 
-                self.func_list.append(PJaffeEllipse())
+                self.func_list.append(PseudoJaffeEllipse(**profile_kwargs))
             elif profile_type == "UNIFORM":
                 from lenstronomy.LightModel.Profiles.uniform import Uniform
 
-                self.func_list.append(Uniform())
+                self.func_list.append(Uniform(**profile_kwargs))
             elif profile_type == "POWER_LAW":
                 from lenstronomy.LightModel.Profiles.power_law import PowerLaw
 
-                self.func_list.append(PowerLaw())
+                self.func_list.append(PowerLaw(**profile_kwargs))
             elif profile_type == "NIE":
                 from lenstronomy.LightModel.Profiles.nie import NIE
 
-                self.func_list.append(NIE())
+                self.func_list.append(NIE(**profile_kwargs))
             elif profile_type == "CHAMELEON":
                 from lenstronomy.LightModel.Profiles.chameleon import Chameleon
 
-                self.func_list.append(Chameleon())
+                self.func_list.append(Chameleon(**profile_kwargs))
             elif profile_type == "DOUBLE_CHAMELEON":
                 from lenstronomy.LightModel.Profiles.chameleon import DoubleChameleon
 
-                self.func_list.append(DoubleChameleon())
+                self.func_list.append(DoubleChameleon(**profile_kwargs))
             elif profile_type == "TRIPLE_CHAMELEON":
                 from lenstronomy.LightModel.Profiles.chameleon import TripleChameleon
 
-                self.func_list.append(TripleChameleon())
+                self.func_list.append(TripleChameleon(**profile_kwargs))
             elif profile_type == "INTERPOL":
                 from lenstronomy.LightModel.Profiles.interpolation import Interpol
 
-                self.func_list.append(Interpol())
+                self.func_list.append(Interpol(**profile_kwargs))
             elif profile_type == "SLIT_STARLETS":
                 from lenstronomy.LightModel.Profiles.starlets import SLIT_Starlets
 
-                self.func_list.append(
-                    SLIT_Starlets(fast_inverse=True, second_gen=False)
-                )
+                profile_kwargs["fast_inverse"] = True
+                profile_kwargs["second_gen"] = False
+                self.func_list.append(SLIT_Starlets(**profile_kwargs))
             elif profile_type == "SLIT_STARLETS_GEN2":
                 from lenstronomy.LightModel.Profiles.starlets import SLIT_Starlets
 
-                self.func_list.append(SLIT_Starlets(second_gen=True))
+                profile_kwargs["second_gen"] = True
+                self.func_list.append(SLIT_Starlets(**profile_kwargs))
             elif profile_type == "LINEAR":
                 from lenstronomy.LightModel.Profiles.linear import Linear
 
-                self.func_list.append(Linear())
+                self.func_list.append(Linear(**profile_kwargs))
             elif profile_type == "LINEAR_ELLIPSE":
                 from lenstronomy.LightModel.Profiles.linear import LinearEllipse
 
-                self.func_list.append(LinearEllipse())
+                self.func_list.append(LinearEllipse(**profile_kwargs))
+            elif profile_type == "LINE_PROFILE":
+                from lenstronomy.LightModel.Profiles.lineprofile import LineProfile
+
+                self.func_list.append(LineProfile(**profile_kwargs))
             else:
                 raise ValueError(
                     "No light model of type %s found! Supported are the following models: %s"
@@ -223,10 +232,14 @@ class LightModelBase(object):
         return flux
 
     def light_3d(self, r, kwargs_list, k=None):
-        """Computes 3d density at radius r :param r: 3d radius units of arcsec relative
-        to the center of the light profile :param kwargs_list: keyword argument list of
-        light profile :param k: integer or list of integers for selecting subsets of
-        light profiles."""
+        """Computes 3d density at radius r (3D radius) such that integrated in
+        projection in units of angle results in the projected surface brightness.
+
+        :param r: 3d radius units of arcsec relative to the center of the light profile
+        :param kwargs_list: keyword argument list of light profile
+        :param k: integer or list of integers for selecting subsets of light profiles.
+        :return: flux density
+        """
         kwargs_list_standard = self._transform_kwargs(kwargs_list)
         r = np.array(r, dtype=float)
         flux = np.zeros_like(r)
@@ -281,11 +294,15 @@ class LightModelBase(object):
                 if model in [
                     "SERSIC",
                     "SERSIC_ELLIPSE",
+                    "SERSIC_ELLIPSE_FLEXION",
                     "INTERPOL",
                     "GAUSSIAN",
                     "GAUSSIAN_ELLIPSE",
                     "MULTI_GAUSSIAN",
                     "MULTI_GAUSSIAN_ELLIPSE",
+                    "LINE_PROFILE",
+                    "HERNQUIST",
+                    "HERNQUIST_ELLIPSE",
                 ]:
                     kwargs_new = kwargs_list_standard[i].copy()
                     if norm is True:
@@ -307,6 +324,61 @@ class LightModelBase(object):
                 # 'GAUSSIAN', 'GAUSSIAN_ELLIPSE', 'POWER_LAW', 'NIE', 'CHAMELEON', 'DOUBLE_CHAMELEON' ,
                 # 'TRIPLE_CHAMELEON', 'UNIFORM'
         return norm_flux_list
+
+    @property
+    def param_name_list(self):
+        """Returns the list of all parameter names.
+
+        :return: list of lists of strings (for each light model separately)
+        """
+        name_list = []
+        for i, func in enumerate(self.func_list):
+            name_list.append(func.param_names)
+        return name_list
+
+    @property
+    def param_name_list_latex(self):
+        """Returns the list of all parameter names in LateX style.
+
+        :return: list of lists of strings (for each light model separately)
+        """
+        name_list = []
+        for i, func in enumerate(self.func_list):
+            if hasattr(func, "param_names_latex"):
+                name_list.append(func.param_names_latex)
+            else:
+                name_list.append(func.param_names)
+        return name_list
+
+    def check_parameters(self, kwargs_list):
+        """Checks whether the parameter list is consistent with the parameters required
+        by the light model.
+
+        :param kwargs_list: keyword argument list as parameterised models
+        :return: None or raise ValueError with error message of what parameter is not
+            supported.
+        """
+
+        name_list = self.param_name_list
+        if len(kwargs_list) != len(name_list):
+            raise ValueError(
+                "length of input parameter list %s does not match length of light models %s"
+                % (len(kwargs_list), len(name_list))
+            )
+        for i, names in enumerate(name_list):
+            for key in kwargs_list[i]:
+                if key not in names:
+                    raise ValueError(
+                        "parameter %s in light model is not part of model %s (%s). "
+                        "Parameters allowed are %s"
+                        % (key, i, self.profile_type_list[i], names)
+                    )
+            for name in names:
+                if name not in kwargs_list[i]:
+                    raise ValueError(
+                        "Light model %s (%s) requires parameter %s which is not provided in input."
+                        % (i, self.profile_type_list[i], name)
+                    )
 
     def delete_interpol_caches(self):
         """Call the delete_cache method of INTERPOL profiles."""

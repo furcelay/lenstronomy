@@ -8,8 +8,13 @@ class LensedPositions(PSBase):
     """
     class of a lensed point source parameterized as the (multiple) observed image positions
     Name within the PointSource module: 'LENSED_POSITION'
-    parameters: ra_image, dec_image, point_amp
-    If fixed_magnification=True, than 'source_amp' is a parameter instead of 'point_amp'
+    parameters:
+    :param ra_image: list or array of floats
+    :param dec_image: list or array of floats
+    :param point_amp: list or array of floats
+
+    If fixed_magnification=True, then 'source_amp' is a parameter instead of 'point_amp'
+        source_amp: float
 
     """
 
@@ -46,6 +51,7 @@ class LensedPositions(PSBase):
                 kwargs_lens_eqn_solver = {}
             ra_source, dec_source = self.source_position(kwargs_ps, kwargs_lens)
             # TODO: this solver does not distinguish between different frames/bands with partial lens models
+            self._solver.change_source_redshift(self._redshift)
             ra_image, dec_image = self._solver.image_position_from_source(
                 ra_source,
                 dec_source,
@@ -68,6 +74,7 @@ class LensedPositions(PSBase):
         """
         ra_image = kwargs_ps["ra_image"]
         dec_image = kwargs_ps["dec_image"]
+        self._lens_model.change_source_redshift(self._redshift)
 
         if self.k_list is None:
             x_source, y_source = self._lens_model.ray_shooting(
@@ -109,6 +116,7 @@ class LensedPositions(PSBase):
             details
         :return: array of image amplitudes
         """
+        self._lens_model.change_source_redshift(self._redshift)
         if self._fixed_magnification:
             if x_pos is not None and y_pos is not None:
                 ra_image, dec_image = x_pos, y_pos
@@ -127,7 +135,7 @@ class LensedPositions(PSBase):
                 for i in range(len(ra_image)):
                     mag.append(
                         self._lens_model.magnification(
-                            ra_image, dec_image, kwargs_lens, k=self.k_list[i]
+                            ra_image[i], dec_image[i], kwargs_lens, k=self.k_list[i]
                         )
                     )
             point_amp = kwargs_ps["source_amp"] * np.abs(mag)
@@ -150,6 +158,7 @@ class LensedPositions(PSBase):
         if self._fixed_magnification:
             source_amp = kwargs_ps["source_amp"]
         else:
+            self._lens_model.change_source_redshift(self._redshift)
             ra_image, dec_image = kwargs_ps["ra_image"], kwargs_ps["dec_image"]
             if self.k_list is None:
                 mag = self._lens_model.magnification(ra_image, dec_image, kwargs_lens)
@@ -158,7 +167,7 @@ class LensedPositions(PSBase):
                 for i in range(len(ra_image)):
                     mag.append(
                         self._lens_model.magnification(
-                            ra_image, dec_image, kwargs_lens, k=self.k_list[i]
+                            ra_image[i], dec_image[i], kwargs_lens, k=self.k_list[i]
                         )
                     )
             point_amp = kwargs_ps["point_amp"]

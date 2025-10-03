@@ -2,6 +2,7 @@
 
 Execute with py.test -v
 """
+
 import numpy as np
 import pytest
 import time
@@ -90,7 +91,8 @@ class TestParticleSwarmOptimizer(object):
         pso = ParticleSwarmOptimizer(func, low, high, 10)
 
         max_iter = 10
-        result, [chi2_list, pos_list, vel_list] = pso.optimize(max_iter)
+        result, [chi2_list, pos_list, vel_list] = pso.optimize(max_iter, verbose=False)
+        result, [chi2_list, pos_list, vel_list] = pso.optimize(max_iter, verbose=True)
         assert result is not None
         assert chi2_list is not None
         assert pos_list is not None

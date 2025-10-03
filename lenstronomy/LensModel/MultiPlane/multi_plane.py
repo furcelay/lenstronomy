@@ -1,8 +1,10 @@
 import numpy as np
 from copy import deepcopy
 from lenstronomy.LensModel.MultiPlane.multi_plane_base import MultiPlaneBase
-
 from lenstronomy.Util.package_util import exporter
+from lenstronomy.Util.cosmo_util import get_astropy_cosmology
+from astropy.cosmology import *
+import warnings
 
 export, __all__ = exporter()
 
@@ -22,7 +24,6 @@ class MultiPlane(object):
         lens_model_list,
         lens_redshift_list,
         cosmo=None,
-        numerical_alpha_class=None,
         observed_convention_index=None,
         ignore_observed_positions=False,
         z_source_convention=None,
@@ -30,9 +31,11 @@ class MultiPlane(object):
         cosmo_interp=False,
         z_interp_stop=None,
         num_z_interp=100,
-        kwargs_interp=None,
-        kwargs_synthesis=None,
+        profile_kwargs_list=None,
         distance_ratio_sampling=False,
+        cosmology_sampling=False,
+        cosmology_model="FlatLambdaCDM",
+        use_jax=False,
     ):
         """
 
@@ -41,24 +44,72 @@ class MultiPlane(object):
         :param lens_redshift_list: list of floats with redshifts of the lens models indicated in lens_model_list
         :param cosmo: instance of astropy.cosmology
         :param numerical_alpha_class: an instance of a custom class for use in NumericalAlpha() lens model
-         (see documentation in Profiles/numerical_alpha)
-        :param kwargs_interp: interpolation keyword arguments specifying the numerics.
-         See description in the Interpolate() class. Only applicable for 'INTERPOL' and 'INTERPOL_SCALED' models.
+            (see documentation in Profiles/numerical_alpha)
+        :param profile_kwargs_list: list of dicts, keyword arguments used to initialize profile classes
+            in the same order of the lens_model_list. If any of the profile_kwargs are None, then that
+            profile will be initialized using default settings.
         :param observed_convention_index: a list of indices, corresponding to the lens_model_list element with same
-         index, where the 'center_x' and 'center_y' kwargs correspond to observed (lensed) positions, not physical
-         positions. The code will compute the physical locations when performing computations
+            index, where the 'center_x' and 'center_y' kwargs correspond to observed (lensed) positions, not physical
+            positions. The code will compute the physical locations when performing computations
         :param ignore_observed_positions: bool, if True, will ignore the conversion between observed to physical
-         position of deflectors
+            position of deflectors
         :param z_source_convention: float, redshift of a source to define the reduced deflection angles of the lens
-        models. If None, 'z_source' is used.
+            models. If None, 'z_source' is used.
         :param z_lens_convention: float, redshift of a lens plane to define the
-        effective time-delay distance. Only needed if distance ratios are
-        sampled. If None, the first lens redshift is used.
-        :param kwargs_synthesis: keyword arguments for the 'SYNTHESIS' lens model, if applicable
+            effective time-delay distance. Only needed if distance ratios are
+            sampled. If None, the first lens redshift is used.
+        :param cosmo_interp: bool, if True, will use interpolated cosmology
+        :param kwargs_multiplane_model: keyword arguments for the MultiPlaneDecoupled class, if specified
         :param distance_ratio_sampling: bool, if True, will use sampled
-        distance ratios to update T_ij value in multi-lens plane computation.
+            distance ratios to update T_ij value in multi-lens plane computation.
+        :param cosmology_sampling: bool, if True, will use sampled cosmology
+        :param cosmology_model: str, name of the cosmology model to use for
+        :param use_jax: bool, if True, uses deflector profiles from jaxtronomy.
+            Can also be a list of bools, selecting which models in the lens_model_list to use from jaxtronomy
         """
+        self.cosmology_sampling = cosmology_sampling
+        self.cosmology_model = cosmology_model
+        if cosmo is None and cosmology_model == "FlatLambdaCDM":
+            cosmo = default_cosmology.get()
+        elif cosmo is None and cosmology_model != "FlatLambdaCDM":
+            cosmo = get_astropy_cosmology(cosmology_model=cosmology_model)
+        else:
+            warnings.warn(
+                "Cosmology is provided. Make sure your cosmological model is consistent with the cosmology_model argument."
+            )
 
+        if self.cosmology_sampling:
+            if distance_ratio_sampling:
+                warnings.warn(
+                    "cosmology_sampling=True and distance_ratio_sampling=True cannot be set simultaneously. "
+                    "Setting distance_ratio_sampling=False."
+                )
+                distance_ratio_sampling = False
+
+            if cosmo_interp:
+                warnings.warn(
+                    "cosmology_sampling=True and cosmo_interp=True cannot be set simultaneously. "
+                    "Setting cosmo_interp=False."
+                )
+                cosmo_interp = False
+
+        self.kwargs_class = {
+            "z_source": z_source,
+            "lens_model_list": lens_model_list,
+            "lens_redshift_list": lens_redshift_list,
+            "cosmo": cosmo,
+            "observed_convention_index": observed_convention_index,
+            "ignore_observed_positions": ignore_observed_positions,
+            "z_source_convention": z_source_convention,
+            "z_lens_convention": z_lens_convention,
+            "cosmo_interp": cosmo_interp,
+            "z_interp_stop": z_interp_stop,
+            "num_z_interp": num_z_interp,
+            "profile_kwargs_list": profile_kwargs_list,
+            "distance_ratio_sampling": distance_ratio_sampling,
+            "cosmology_sampling": cosmology_sampling,
+            "cosmology_model": cosmology_model,
+        }
         if z_source_convention is None:
             z_source_convention = z_source
         if z_interp_stop is None:
@@ -69,6 +120,7 @@ class MultiPlane(object):
                 "z_source_convention=%s"
                 % (z_interp_stop, z_source, z_source_convention)
             )
+
         self._z_source_convention = z_source_convention
         if z_lens_convention is None:
             if len(lens_redshift_list) > 0:
@@ -77,20 +129,20 @@ class MultiPlane(object):
                 self._z_lens_convention = 0
         else:
             self._z_lens_convention = z_lens_convention
+
         self.distance_ratio_sampling = distance_ratio_sampling
         self._multi_plane_base = MultiPlaneBase(
             lens_model_list=lens_model_list,
             lens_redshift_list=lens_redshift_list,
             cosmo=cosmo,
-            numerical_alpha_class=numerical_alpha_class,
             z_source_convention=z_source_convention,
             cosmo_interp=cosmo_interp,
             z_interp_stop=z_interp_stop,
             num_z_interp=num_z_interp,
-            kwargs_interp=kwargs_interp,
-            kwargs_synthesis=kwargs_synthesis,
+            profile_kwargs_list=profile_kwargs_list,
+            use_jax=use_jax,
         )
-
+        self._z_source = z_source
         self._set_source_distances(z_source)
         self._observed_convention_index = observed_convention_index
         if observed_convention_index is None:
@@ -146,6 +198,14 @@ class MultiPlane(object):
     def T_ij_stop(self, T_ij_stop):
         self._T_ij_stop = T_ij_stop
 
+    def model_info(self):
+        """Shows what models are being initialized and what parameters are being
+        requested for.
+
+        :return: None
+        """
+        self._multi_plane_base.model_info()
+
     def _set_source_distances(self, z_source):
         """Compute the relevant angular diameter distances to a specific source
         redshift.
@@ -162,6 +222,15 @@ class MultiPlane(object):
         )
         self._T_z_source = self._multi_plane_base._cosmo_bkg.T_xy(0, z_source)
 
+    def set_background_cosmo(self, cosmo):
+        """Set the background cosmology.
+
+        :param cosmo: instance of astropy.cosmology
+        :return: None
+        """
+        self._multi_plane_base.set_background_cosmo(cosmo)
+        self._set_source_distances(self._z_source)
+
     def observed2flat_convention(self, kwargs_lens):
         """
 
@@ -169,6 +238,64 @@ class MultiPlane(object):
         :return: kwargs_lens positions mapped into angular position without lensing along its LOS
         """
         return self._convention(kwargs_lens)
+
+    def ray_shooting_partial_comoving(
+        self,
+        x,
+        y,
+        alpha_x,
+        alpha_y,
+        z_start,
+        z_stop,
+        kwargs_lens,
+        include_z_start=False,
+        check_convention=True,
+        T_ij_start=None,
+        T_ij_end=None,
+    ):
+        """Ray-tracing through parts of the cone, starting with (x,y) co-moving
+        distances and angles (alpha_x, alpha_y) at redshift z_start and then backwards
+        to redshift z_stop.
+
+        :param x: co-moving position [Mpc] / angle definition
+        :param y: co-moving position [Mpc] / angle definition
+        :param alpha_x: ray angle at z_start [arcsec]
+        :param alpha_y: ray angle at z_start [arcsec]
+        :param z_start: redshift of start of computation
+        :param z_stop: redshift where output is computed
+        :param kwargs_lens: lens model keyword argument list
+        :param include_z_start: bool, if True, includes the computation of the
+            deflection angle at the same redshift as the start of the ray-tracing.
+            ATTENTION: deflection angles at the same redshift as z_stop will be
+            computed! This can lead to duplications in the computation of deflection
+            angles.
+        :param check_convention: flag to check the image position convention (leave this
+            alone)
+        :param T_ij_start: transverse angular distance between the starting redshift to
+            the first lens plane to follow. If not set, will compute the distance each
+            time this function gets executed.
+        :param T_ij_end: transverse angular distance between the last lens plane being
+            computed and z_end. If not set, will compute the distance each time this
+            function gets executed.
+        :return: co-moving position (modulo angle definition) and angles at redshift
+            z_stop
+        """
+
+        if check_convention and not self.ignore_observed_positions:
+            kwargs_lens = self._convention(kwargs_lens)
+
+        return self._multi_plane_base.ray_shooting_partial_comoving(
+            x,
+            y,
+            alpha_x,
+            alpha_y,
+            z_start,
+            z_stop,
+            kwargs_lens,
+            include_z_start=include_z_start,
+            T_ij_start=T_ij_start,
+            T_ij_end=T_ij_end,
+        )
 
     def ray_shooting(
         self, theta_x, theta_y, kwargs_lens, check_convention=True, k=None
@@ -191,7 +318,6 @@ class MultiPlane(object):
         y = np.zeros_like(theta_y, dtype=float)
         alpha_x = np.array(theta_x)
         alpha_y = np.array(theta_y)
-
         x, y, _, _ = self._multi_plane_base.ray_shooting_partial_comoving(
             x,
             y,
@@ -273,16 +399,16 @@ class MultiPlane(object):
         z_stop,
         kwargs_lens,
         include_z_start=False,
-        check_convention=True,
         T_ij_start=None,
         T_ij_end=None,
+        check_convention=True,
     ):
-        """Ray-tracing through parts of the cone, starting with (x,y) co-moving
-        distances and angles (alpha_x, alpha_y) at redshift z_start and then backwards
-        to redshift z_stop.
+        """Ray-tracing through parts of the cone, starting with (x,y) in angular units
+        as seen on the sky without lensing and angles (alpha_x, alpha_y) as seen at
+        redshift z_start and then backwards to redshift z_stop.
 
-        :param x: co-moving position [Mpc] / angle definition
-        :param y: co-moving position [Mpc] / angle definition
+        :param theta_x: angular position on the sky [arcsec]
+        :param theta_y: angular position on the sky [arcsec]
         :param alpha_x: ray angle at z_start [arcsec]
         :param alpha_y: ray angle at z_start [arcsec]
         :param z_start: redshift of start of computation
@@ -290,21 +416,19 @@ class MultiPlane(object):
         :param kwargs_lens: lens model keyword argument list
         :param include_z_start: bool, if True, includes the computation of the
             deflection angle at the same redshift as the start of the ray-tracing.
-            ATTENTION: deflection angles at the same redshift as z_stop will be
-            computed! This can lead to duplications in the computation of deflection
+            ATTENTION: deflection angles at the same redshift as z_stop will be computed
+            always! This can lead to duplications in the computation of deflection
             angles.
-        :param check_convention: flag to check the image position convention (leave this
-            alone)
         :param T_ij_start: transverse angular distance between the starting redshift to
             the first lens plane to follow. If not set, will compute the distance each
             time this function gets executed.
         :param T_ij_end: transverse angular distance between the last lens plane being
             computed and z_end. If not set, will compute the distance each time this
             function gets executed.
-        :return: co-moving position (modulo angle definition) and angles at redshift
-            z_stop
+        :param check_convention: flag to check the image position convention (leave this
+            alone)
+        :return: angular position and angles at redshift z_stop
         """
-
         if check_convention and not self.ignore_observed_positions:
             kwargs_lens = self._convention(kwargs_lens)
 
@@ -342,6 +466,7 @@ class MultiPlane(object):
         :param theta_x: angle in x-direction on the image
         :param theta_y: angle in y-direction on the image
         :param kwargs_lens: lens model keyword argument list
+        :param kwargs_cosmo: cosmo keyword argument
         :return: travel time in unit of days
         """
         dt_geo, dt_grav = self.geo_shapiro_delay(
@@ -625,7 +750,6 @@ class LensedLocation(object):
             theta_x = kwargs_lens[ind]["center_x"]
             theta_y = kwargs_lens[ind]["center_y"]
             zstop = self._multiplane._lens_redshift_list[ind]
-
             x, y, _, _ = self._multiplane.ray_shooting_partial_comoving(
                 0,
                 0,

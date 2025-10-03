@@ -85,15 +85,17 @@ class TestNumerics(object):
 
     def test_PJaffe(self):
         kwargs = {"rho0": 1.0, "Ra": 0.2, "Rs": 2.0}
-        from lenstronomy.LensModel.Profiles.p_jaffe import PJaffe as Model
+        from lenstronomy.LensModel.Profiles.pseudo_jaffe import PseudoJaffe as Model
 
         self.assert_integrals(Model, kwargs)
+        kwargs_lens = {"sigma0": 0.5, "Ra": 0.2, "Rs": 2.0}
+        self.assert_lens_integrals(Model, kwargs_lens)
 
     def test_PJaffa_density_deflection(self):
         """Tests whether the unit conversion between the lensing parameter 'sigma0' and
         the units in the density profile are ok :return:"""
 
-        from lenstronomy.LensModel.Profiles.p_jaffe import PJaffe as Model
+        from lenstronomy.LensModel.Profiles.pseudo_jaffe import PseudoJaffe as Model
 
         lensModel = Model()
         sigma0 = 1.0
@@ -132,7 +134,9 @@ class TestNumerics(object):
             "e1": 0,
             "e2": 0,
         }
-        from lenstronomy.LensModel.Profiles.nfw_ellipse import NFW_ELLIPSE as Model
+        from lenstronomy.LensModel.Profiles.nfw_ellipse_potential import (
+            NFWEllipsePotential as Model,
+        )
 
         # self.assert_integrals(Model, kwargs)
 
@@ -175,8 +179,8 @@ class TestNumerics(object):
         self.assert_lens_integrals(Model, kwargs)
 
     def test_hernquist_ellipse(self):
-        from lenstronomy.LensModel.Profiles.hernquist_ellipse import (
-            Hernquist_Ellipse as Model,
+        from lenstronomy.LensModel.Profiles.hernquist_ellipse_potential import (
+            HernquistEllipsePotential as Model,
         )
 
         kwargs = {"rho0": 1.0, "Rs": 5.0, "e1": 0, "e2": 0}
@@ -289,16 +293,23 @@ class TestNumerics(object):
         npt.assert_almost_equal(alpha_mass / np.pi, alpha_r, decimal=5)
 
     def test_gaussian(self):
-        from lenstronomy.LensModel.Profiles.gaussian_kappa import GaussianKappa as Model
+        from lenstronomy.LensModel.Profiles.gaussian import (
+            Gaussian as Model,
+        )
 
         kwargs = {"amp": 1.0 / 4.0, "sigma": 2.0}
         self.assert_integrals(Model, kwargs)
+
+        kwargs_lens = {"amp": 1.0 / 4.0, "sigma": 2.0}
+        self.assert_lens_integrals(Model, kwargs_lens)
 
     def test_gaussian_density_deflection(self):
         """Tests whether the unit conversion between the lensing parameter 'sigma0' and
         the units in the density profile are ok :return:"""
 
-        from lenstronomy.LensModel.Profiles.gaussian_kappa import GaussianKappa as Model
+        from lenstronomy.LensModel.Profiles.gaussian import (
+            Gaussian as Model,
+        )
 
         lensModel = Model()
         amp = 1.0 / 4.0
@@ -326,6 +337,9 @@ class TestNumerics(object):
 
         kwargs = {"rho0": 1.0, "Rs": 1, "r_trunc": 4}
         self.assert_integrals(Model, kwargs)
+        # TODO: add density_lens() definition to TNFW profile
+        # kwargs_lens = {"alpha_Rs": 1.0, "Rs": 1, "r_trunc": 4}
+        # self.assert_lens_integrals(Model, kwargs_lens)
 
     def test_cnfw(self):
         from lenstronomy.LensModel.Profiles.cnfw import CNFW as Model
@@ -336,7 +350,9 @@ class TestNumerics(object):
         self.assert_lens_integrals(Model, kwargs_lens)
 
     def test_cnfw_ellipse(self):
-        from lenstronomy.LensModel.Profiles.cnfw_ellipse import CNFW_ELLIPSE as Model
+        from lenstronomy.LensModel.Profiles.cnfw_ellipse_potential import (
+            CNFWEllipsePotential as Model,
+        )
 
         kwargs = {"rho0": 1.0, "Rs": 1, "r_core": 0.5, "e1": 0, "e2": 0}
         # self.assert_integrals(Model, kwargs)

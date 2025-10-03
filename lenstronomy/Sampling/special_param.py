@@ -145,14 +145,14 @@ class GeneralScalingParam(ArrayParam):
                 self._kwargs_upper[pow_name] = 10
 
 
-class DistanceRatioFactorsAB(SingleParam):
-    """Distance ratio a and b factors.
+class DistanceRatioBetaFactors(SingleParam):
+    """Factors of distance ratio betas.
 
-    If there are P lens planes, then there are P
-    factor_a and P-2 factor_b parameters. The parameter to be defined by the user are
-    "factor_a_1", "factor_a_2, ..., factor_a_P, factor_b_2, ..., factor_b_{P-1}". For
-    further definitions of factor_a and factor_b parameters, see the documentation of
-    `lesnstronomy.ImSim.multiplane_organizer.MultiplaneOrganizer()` class.
+    If there are P lens planes, then there are comb(P, 2) factor_beta parameters. The
+    parameter to be defined by the user are "factor_beta_1_2", "factor_beta_1_3",
+    "factor_beta_2_3", ...,". For further definitions of factor_beta parameters, see
+    the documentation of `lesnstronomy.ImSim.multiplane_organizer.MultiplaneOrganizer()`
+    class.
     """
 
     def __init__(self, on, num_lens_plane: int):
@@ -170,17 +170,67 @@ class DistanceRatioFactorsAB(SingleParam):
         if not self.on:
             return
 
-        for i in range(self.num_lens_plane):
-            param_name = f"factor_a_{i+1}"
-            self.param_names[param_name] = 1
-            self._kwargs_lower[param_name] = 0
-            self._kwargs_upper[param_name] = 1000
+        for j in range(self.num_lens_plane):
+            for i in range(j):
+                param_name = f"factor_beta_{i+1}_{j+1}"
+                self.param_names[param_name] = 1
+                self._kwargs_lower[param_name] = 0
+                self._kwargs_upper[param_name] = 1000
 
-        for i in range(1, self.num_lens_plane - 1):
-            param_name = f"factor_b_{i + 1}"
-            self.param_names[param_name] = 1
-            self._kwargs_lower[param_name] = 0
-            self._kwargs_upper[param_name] = 1000
+
+class CosmologyParam(SingleParam):
+    """Cosmology parameters.
+
+    Currently, only the Hubble constant is supported.
+    """
+
+    def __init__(self, on, cosmology_model="FlatLambdaCDM"):
+        """
+        :param on: bool, if True, cosmology parameters are sampled
+        """
+        allowed_cosmologies = [
+            "FlatLambdaCDM",
+            "LambdaCDM",
+            "FlatwCDM",
+            "wCDM",
+            "Flatw0waCDM",
+            "w0waCDM",
+        ]
+        param_names = [
+            ["H0", "Om0"],
+            ["H0", "Om0", "Ode0"],
+            ["H0", "Om0", "w0"],
+            ["H0", "Om0", "w0", "Ode0"],
+            ["H0", "Om0", "w0", "wa"],
+            ["H0", "Om0", "w0", "wa", "Ode0"],
+        ]
+        lowers = [
+            {"H0": 0, "Om0": 0},
+            {"H0": 0, "Om0": 0, "Ode0": 0},
+            {"H0": 0, "Om0": 0, "w0": -4},
+            {"H0": 0, "Om0": 0, "w0": -4, "Ode0": 0},
+            {"H0": 0, "Om0": 0, "w0": -4, "wa": -5},
+            {"H0": 0, "Om0": 0, "w0": -4, "wa": -5, "Ode0": 0},
+        ]
+        uppers = [
+            {"H0": 200, "Om0": 1},
+            {"H0": 200, "Om0": 1, "Ode0": 1},
+            {"H0": 200, "Om0": 1, "w0": 2},
+            {"H0": 200, "Om0": 1, "w0": 2, "Ode0": 1},
+            {"H0": 200, "Om0": 1, "w0": 2, "wa": 5},
+            {"H0": 200, "Om0": 1, "w0": 2, "wa": 5, "Ode0": 1},
+        ]
+        index = allowed_cosmologies.index(cosmology_model)
+
+        self.cosmology_model = cosmology_model
+        self.param_names = param_names[index]
+        self._kwargs_lower = lowers[index]
+        self._kwargs_upper = uppers[index]
+
+        super().__init__(on)
+
+        if not self.on:
+            return
 
 
 # ======================================== #
@@ -192,7 +242,7 @@ class SpecialParam(object):
     """Class that handles special parameters that are not directly part of a specific
     model component.
 
-    These includes cosmology relevant parameters, astrometric errors and overall scaling
+    These include cosmology relevant parameters, astrometric errors and overall scaling
     parameters.
     """
 
@@ -214,6 +264,8 @@ class SpecialParam(object):
         kinematic_sampling=False,
         distance_ratio_sampling=False,
         num_lens_planes=1,
+        cosmology_sampling=False,
+        cosmology_model="FlatLambdaCDM",
     ):
         """
 
@@ -235,31 +287,47 @@ class SpecialParam(object):
          Warning: this is only defined for pixel-based source modelling (e.g. 'SLIT_STARLETS' light profile)
         :param kinematic_sampling: bool, if True, samples the kinematic parameters b_ani, incli, with cosmography
          D_dt (overrides _D_dt_sampling) and Dd
-        :param distance_ratio_sampling: bool, if True, the distance ratios will be sampled. Only applicable for multi-plane case, will turn-off Ddt_sampling by default as Ddt will be sampled as a ratio with a fiducial value in this option.
+        :param distance_ratio_sampling: bool, if True, the distance ratios will be sampled.
+         Only applicable for multi-plane case, will turn-off Ddt_sampling by default as Ddt will be sampled as a
+         ratio with a fiducial value in this option.
         :param num_lens_planes: integer, number of lens planes when `distance_ratio_sampling` is True
-        sampled
+         sampled
+        :param cosmological_param_sampling: bool, if True, samples cosmological parameters
+        :param cosmology_model: str, name of the cosmology model to be used
         """
-        self._num_lens_planes = num_lens_planes
-        self._distance_ratio_sampling = DistanceRatioFactorsAB(
-            distance_ratio_sampling, num_lens_planes
-        )
 
-        if distance_ratio_sampling:
+        if cosmology_sampling or distance_ratio_sampling:
             if Ddt_sampling:
                 warnings.warn(
-                    "Ddt_sampling is turned off when distance_ratio_sampling is True."
+                    "Ddt_sampling is turned off when cosmology_sampling or distance_ratio_sampling is True."
                 )
                 Ddt_sampling = False
             if num_z_sampling > 0:
                 warnings.warn(
-                    "num_z_sampling is turned off when distance_ratio_sampling is True."
+                    "num_z_sampling is turned off when cosmology_sampling or distance_ratio_sampling is True."
                 )
                 num_z_sampling = 0
             if kinematic_sampling:
                 warnings.warn(
-                    "kinematic_sampling is turned off when distance_ratio_sampling is True."
+                    "kinematic_sampling is turned off when cosmology_sampling or distance_ratio_sampling is True."
                 )
                 kinematic_sampling = False
+
+        if cosmology_sampling:
+            if distance_ratio_sampling:
+                warnings.warn(
+                    "distance_ratio_sampling is turned off when cosmology_sampling is True."
+                )
+                distance_ratio_sampling = False
+
+        self._cosmology_param_sampling = CosmologyParam(
+            cosmology_sampling, cosmology_model
+        )
+
+        self._num_lens_planes = num_lens_planes
+        self._distance_ratio_sampling = DistanceRatioBetaFactors(
+            distance_ratio_sampling, num_lens_planes
+        )
 
         self._D_dt_sampling = DdtSamplingParam(Ddt_sampling or kinematic_sampling)
 
@@ -288,7 +356,7 @@ class SpecialParam(object):
 
         if kwargs_fixed is None:
             kwargs_fixed = {}
-        self._kwargs_fixed = kwargs_fixed
+        self.kwargs_fixed = kwargs_fixed
 
         if kwargs_lower is None:
             kwargs_lower = {}
@@ -315,13 +383,13 @@ class SpecialParam(object):
                 self._param_groups,
                 args,
                 i,
-                kwargs_fixed=self._kwargs_fixed,
+                kwargs_fixed=self.kwargs_fixed,
                 kwargs_lower=self.lower_limit,
                 kwargs_upper=self.upper_limit,
             )
         else:
             result = ModelParamGroup.compose_get_params(
-                self._param_groups, args, i, kwargs_fixed=self._kwargs_fixed
+                self._param_groups, args, i, kwargs_fixed=self.kwargs_fixed
             )
         return result
 
@@ -329,10 +397,11 @@ class SpecialParam(object):
         """
 
         :param kwargs_special: keyword arguments with parameter settings
+         For example, if num_mass_scaling = 2, {"scale_factor": [1, 2]} scale_factor needs to be an array of length two
         :return: argument list of the sampled parameters extracted from kwargs_special
         """
         return ModelParamGroup.compose_set_params(
-            self._param_groups, kwargs_special, kwargs_fixed=self._kwargs_fixed
+            self._param_groups, kwargs_special, kwargs_fixed=self.kwargs_fixed
         )
 
     def num_param(self):
@@ -341,7 +410,7 @@ class SpecialParam(object):
         :return: integer, number of free parameters sampled (and managed) by this class, parameter names (list of strings)
         """
         return ModelParamGroup.compose_num_params(
-            self._param_groups, kwargs_fixed=self._kwargs_fixed
+            self._param_groups, kwargs_fixed=self.kwargs_fixed
         )
 
     @property
@@ -359,4 +428,5 @@ class SpecialParam(object):
             self._z_sampling,
             self._source_grid_offset,
             self._distance_ratio_sampling,
+            self._cosmology_param_sampling,
         ]

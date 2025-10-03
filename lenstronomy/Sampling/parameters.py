@@ -38,7 +38,7 @@ class Param(object):
     joint position parameter between source light model and point source
 
     'joint_lens_light_with_point_source': list [[i_point_source, k_lens_light], [...], ...],
-    joint position parameter between lens model and lens light model
+    joint position parameter between lens light model and point source
 
     'joint_extinction_with_lens_light': list [[i_lens_light, k_extinction, ['param_name1', 'param_name2', ...]], [...], ...],
     joint parameters between the lens surface brightness and the optical depth models
@@ -155,6 +155,9 @@ class Param(object):
         kinematic_sampling=None,
         num_shapelet_lens=0,
         log_sampling_lens=[],
+        distance_ratio_sampling=False,
+        cosmology_sampling=False,
+        solver_param_module=None,
     ):
         """
 
@@ -211,7 +214,8 @@ class Param(object):
         :param num_point_source_list: list of number of point sources per point source model class
         :param image_plane_source_list: optional, list of booleans for the source_light components.
          If a component is set =True it will parameterized the positions in the image plane and ray-trace the
-         parameters back to the source position on the fly during the fitting.
+         parameters back to the source position on the fly during the fitting. If joint coordinates with other
+         source profiles, only one should be indicated as bool.
         :param solver_type: string, option for specific solver type
          see detailed instruction of the Solver4Point and Solver2Point classes
         :param Ddt_sampling: bool, if True, samples the time-delay distance D_dt (in units of Mpc)
@@ -228,6 +232,12 @@ class Param(object):
          adds two additional sampled parameters describing RA/Dec offsets between data coordinate grid and pixelated source plane coordinate grid.
         :param num_shapelet_lens: number of shapelet coefficients in the 'SHAPELETS_CART' or 'SHAPELETS_POLAR' mass profile.
         :param log_sampling_lens: Sample the log10 of the lens model parameters. Format : [[i_lens, ['param_name1', 'param_name2', ...]], [...], ...],
+        :param distance_ratio_sampling: bool, if True, will use sampled
+         distance ratios to update T_ij value in multi-lens plane computation.
+        :param cosmology_sampling: bool, if True, will use sampled cosmology
+        :param cosmology_model: str, name of the cosmology model to use for
+        :param solver_param_module: a class that performs conversions update_kwargs, extract_array, and add_fixed_lens
+         for the Solver4Point class with the solver_type = 'CUSTOM' option
         """
 
         self._lens_model_list = kwargs_model.get("lens_model_list", [])
@@ -236,18 +246,9 @@ class Param(object):
         self._source_redshift_list = kwargs_model.get("source_redshift_list", None)
         self._lens_light_model_list = kwargs_model.get("lens_light_model_list", [])
         self._point_source_model_list = kwargs_model.get("point_source_model_list", [])
-        self._optical_depth_model_list = kwargs_model.get(
-            "optical_depth_model_list", []
+        self._fixed_magnification_list = kwargs_model.get(
+            "fixed_magnification_list", None
         )
-        self._tracer_source_model_list = kwargs_model.get(
-            "tracer_source_model_list", []
-        )
-        self._lens_model_list = kwargs_model.get("lens_model_list", [])
-        self._lens_redshift_list = kwargs_model.get("lens_redshift_list", None)
-        self._source_light_model_list = kwargs_model.get("source_light_model_list", [])
-        self._source_redshift_list = kwargs_model.get("source_redshift_list", None)
-        self._lens_light_model_list = kwargs_model.get("lens_light_model_list", [])
-        self._point_source_model_list = kwargs_model.get("point_source_model_list", [])
         self._optical_depth_model_list = kwargs_model.get(
             "optical_depth_model_list", []
         )
@@ -256,10 +257,11 @@ class Param(object):
         )
         self._kwargs_model = kwargs_model
 
-        if "distance_ratio_sampling" in self._kwargs_model:
-            distance_ratio_sampling = self._kwargs_model["distance_ratio_sampling"]
-        else:
-            distance_ratio_sampling = None
+        distance_ratio_sampling = self._kwargs_model.get(
+            "distance_ratio_sampling", None
+        )
+        cosmology_sampling = self._kwargs_model.get("cosmology_sampling", None)
+        cosmology_model = self._kwargs_model.get("cosmology_model", "FlatLambdaCDM")
 
         # check how many redshifts need to be sampled
         num_z_sampling = 0
@@ -368,7 +370,6 @@ class Param(object):
         if num_point_source_list is None:
             num_point_source_list = [1] * len(self._point_source_model_list)
 
-        # Attention: if joint coordinates with other source profiles, only indicate one as bool
         if image_plane_source_list is None:
             image_plane_source_list = [False] * len(self._source_light_model_list)
         self._image_plane_source_list = image_plane_source_list
@@ -386,8 +387,8 @@ class Param(object):
                 solver_type=self._solver_type,
                 lensModel=self._lens_model_class,
                 num_images=self._num_images,
+                parameter_module=solver_param_module,
             )
-
         source_model_list = self._source_light_model_list
         if len(source_model_list) != 1 or source_model_list[0] not in [
             "SLIT_STARLETS",
@@ -430,6 +431,10 @@ class Param(object):
         kwargs_fixed_tracer_source_updated = self._fix_joint_param(
             kwargs_fixed_tracer_source, self._joint_source_light_with_tracer
         )
+        if "lens_profile_kwargs_list" in kwargs_model.keys():
+            lens_profile_kwargs_list = kwargs_model["lens_profile_kwargs_list"]
+        else:
+            lens_profile_kwargs_list = None
         self.lensParams = LensParam(
             self._lens_model_list,
             kwargs_fixed_lens_updated,
@@ -439,7 +444,14 @@ class Param(object):
             kwargs_lower=kwargs_lower_lens,
             kwargs_upper=kwargs_upper_lens,
             num_shapelet_lens=num_shapelet_lens,
+            profile_kwargs_list=lens_profile_kwargs_list,
         )
+        if "lens_light_profile_kwargs_list" in kwargs_model.keys():
+            lens_light_profile_kwargs_list = kwargs_model[
+                "lens_light_profile_kwargs_list"
+            ]
+        else:
+            lens_light_profile_kwargs_list = None
         self.lensLightParams = LightParam(
             self._lens_light_model_list,
             kwargs_fixed_lens_light_updated,
@@ -447,7 +459,14 @@ class Param(object):
             linear_solver=linear_solver,
             kwargs_lower=kwargs_lower_lens_light,
             kwargs_upper=kwargs_upper_lens_light,
+            profile_kwargs_list=lens_light_profile_kwargs_list,
         )
+        if "source_light_profile_kwargs_list" in kwargs_model.keys():
+            source_light_profile_kwargs_list = kwargs_model[
+                "source_light_profile_kwargs_list"
+            ]
+        else:
+            source_light_profile_kwargs_list = None
         self.sourceParams = LightParam(
             self._source_light_model_list,
             kwargs_fixed_source_updated,
@@ -455,12 +474,14 @@ class Param(object):
             linear_solver=linear_solver,
             kwargs_lower=kwargs_lower_source,
             kwargs_upper=kwargs_upper_source,
+            profile_kwargs_list=source_light_profile_kwargs_list,
         )
         self.pointSourceParams = PointSourceParam(
             self._point_source_model_list,
             kwargs_fixed_ps_updated,
             num_point_source_list=num_point_source_list,
             linear_solver=linear_solver,
+            fixed_magnification_list=self._fixed_magnification_list,
             kwargs_lower=kwargs_lower_ps,
             kwargs_upper=kwargs_upper_ps,
         )
@@ -477,6 +498,8 @@ class Param(object):
             general_scaling_params=self._general_scaling_masks,
             distance_ratio_sampling=distance_ratio_sampling,
             num_lens_planes=num_lens_planes,
+            cosmology_sampling=cosmology_sampling,
+            cosmology_model=cosmology_model,
             kwargs_fixed=kwargs_fixed_special,
             num_scale_factor=self._num_scale_factor,
             kwargs_lower=kwargs_lower_special,
@@ -499,7 +522,7 @@ class Param(object):
 
         for lens_source_joint in self._joint_lens_with_source_light:
             i_source = lens_source_joint[0]
-            if i_source in self._image_plane_source_list:
+            if self._image_plane_source_list[i_source]:
                 raise ValueError(
                     "linking a source light model with a lens model AND simultaneously parameterizing the"
                     " source position in the image plane is not valid!"
@@ -522,7 +545,7 @@ class Param(object):
         """
         return self._linear_solver
 
-    def args2kwargs(self, args, bijective=False):
+    def args2kwargs(self, args, bijective=False, jax=False):
         """
 
         :param args: tuple of parameter values (float, strings, ...)
@@ -530,10 +553,13 @@ class Param(object):
          (e.g. if image_plane_source_list is set =True it returns the position in the image plane coordinates),
          if False, returns the parameters in the form to render a model (e.g. image_plane_source_list positions are
          ray-traced back to the source plane).
+        :param jax: Always False unless this function is being called from jaxtronomy, in which case set to True.
         :return: keyword arguments sorted in lenstronomy conventions
         """
         i = 0
-        args = np.atleast_1d(args)
+        if jax is False:
+            args = np.atleast_1d(args)
+
         kwargs_lens, i = self.lensParams.get_params(args, i)
         kwargs_source, i = self.sourceParams.get_params(args, i)
         kwargs_lens_light, i = self.lensLightParams.get_params(args, i)
@@ -564,6 +590,7 @@ class Param(object):
         kwargs_lens = self._update_joint_param(
             kwargs_lens, kwargs_lens, self._joint_lens_with_lens
         )
+
         kwargs_lens = self.update_lens_scaling(kwargs_special, kwargs_lens)
         # update point source constraint solver
         if self._solver is True:
@@ -617,7 +644,6 @@ class Param(object):
         :param kwargs_tracer_source: tracer of the source light keyword argument list
         :return: numpy array of parameters
         """
-
         args = self.lensParams.set_params(kwargs_lens)
         args += self.sourceParams.set_params(kwargs_source)
         args += self.lensLightParams.set_params(kwargs_lens_light)
@@ -984,6 +1010,23 @@ class Param(object):
         else:
             return 0
 
+    @property
+    def fixed_kwargs_list(self):
+        """
+
+        :return: list of fixed keyword arguments
+        """
+
+        return (
+            self.lensParams.kwargs_fixed,
+            self.sourceParams.kwargs_fixed,
+            self.lensLightParams.kwargs_fixed,
+            self.pointSourceParams.kwargs_fixed,
+            self.specialParams.kwargs_fixed,
+            self.extinctionParams.kwargs_fixed,
+            self.tracerSourceParams.kwargs_fixed,
+        )
+
     def print_setting(self):
         """Prints the setting of the parameter class.
 
@@ -992,7 +1035,7 @@ class Param(object):
         num, param_list = self.num_param()
         num_linear = self.num_param_linear()
 
-        # TODO print settings of specailParams?
+        # TODO print settings of specialParams?
         print("The following model options are chosen:")
         print("Lens models:", self._lens_model_list)
         print("Source models:", self._source_light_model_list)
