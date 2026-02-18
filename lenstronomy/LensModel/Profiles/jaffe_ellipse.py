@@ -1,21 +1,26 @@
-from lenstronomy.LensModel.Profiles.p_jaffe import PJaffe
-from lenstronomy.LensModel.Profiles.pie import PIE
+__author__ = "furcelay"
+
+from lenstronomy.LensModel.Profiles.pseudo_jaffe import PseudoJaffe
+from lenstronomy.LensModel.Profiles.pseudo_isothermal_ellipse import PseudoIsothermalEllipse
 from lenstronomy.Util import param_util, util
 from lenstronomy.LensModel.Profiles.base_profile import LensProfileBase
 import numpy as np
 
-__all__ = ["DPIE"]
+__all__ = ["JaffeEllipse"]
 
 
-class DPIE(LensProfileBase):
+class JaffeEllipse(LensProfileBase):
     """
     class to compute the DUAL PSEUDO ISOTHERMAL ELLIPTICAL MASS DISTRIBUTION (dPIEMD or dPIE)
     based on Eliasdottir (2007) https://arxiv.org/pdf/0710.5636.pdf Appendix A
     and Kassiola & Kovner (1993) https://articles.adsabs.harvard.edu/pdf/1993ApJ...417..450K  Section 4.1.
 
-    Unlike PJaffe_Ellipse, this profile is fully elliptical
+    Unlike PseudoJaffeEllipsePotential, the mass of this profile is fully elliptical.
 
-    Module name: 'DPIE';
+    The profile is composed by two PseudoIsothermalEllipse with different scale radius, making a flat core within Ra
+    and a steep decay from Rs.
+
+    Module name: 'JAFFE_ELLIPSE';
 
     The 3D density distribution is
 
@@ -42,12 +47,15 @@ class DPIE(LensProfileBase):
     The asymptotic einstein radius (when :math:`Ra \\to 0` and :math:`Rs \\to \\infty`) is
 
     .. math::
-        \\theta_E = \\sigma_0 \\frac{2 a s^2}{s^2 - a^2}
+        \\theta_E = 2 Ra \\sigma_0
 
-     The fiducial velocity dispersion :math:`\\sigma_{dPIE}` is
+     The fiducial velocity dispersion :math:`\\sigma_{v}` has different definitions. Here are the conversions
+     for Lenstool (lt), Limousin (2005) (lim), and Elíasdóttir (2007) (el):
 
     .. math::
-        \\sigma_{dPIE}^2 = \\frac{4}{3} G \\Sigma_0 \\frac{a s^2}{s^2 - a^2}
+        \\sigma_{v}^2(lt) = \\frac{c^2}{6 \\pi} \\frac{D_S}{D_{LS}} \\theta_E \\
+        \\sigma_{v}^2(lim) = \\frac{c^2}{4 \\pi} \\frac{D_S}{D_{LS}} \\theta_E \\
+        \\sigma_{v}^2(lim) = \\frac{c^2}{6 \\pi} \\frac{D_S}{D_{LS}} \\frac{Rs^2 - Ra^2}{Rs^2} \\theta_E
 
     which is the same as in Lenstool.
     """
@@ -71,52 +79,52 @@ class DPIE(LensProfileBase):
         "center_x": 100,
         "center_y": 100,
     }
+    _r_min = 0.0001
 
     def __init__(self):
-        self.spherical = PJaffe()
-        self.pie = PIE()
-        super(DPIE, self).__init__()
+        self._spherical = PseudoJaffe()
+        self._pie = PseudoIsothermalEllipse()
+        super(JaffeEllipse, self).__init__()
 
     def function(self, x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0):
         """Returns double integral of dPIE profile."""
-        Ra, Rs = self.spherical._sort_ra_rs(Ra, Rs)
+        Ra, Rs = self._spherical._sort_ra_rs(Ra, Rs)
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        e = param_util.q2e(q)
+        e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
-        scale = sigma0 * Ra * Rs / (Rs - Ra)
-        f_a = self.pie._complex_potential(x_, y_, Ra, e)
-        f_s = self.pie._complex_potential(x_, y_, Rs, e)
-        f_ = (f_a / Ra - f_s / Rs)
-        return scale * f_
+        scale = 2 * sigma0 * Ra * Rs / (Rs - Ra)
+        f_a = self._pie._complex_potential(x_, y_, Ra, e)
+        f_s = self._pie._complex_potential(x_, y_, Rs, e)
+        return scale * (f_a  - f_s)
 
     def derivatives(self, x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0):
         """Returns df/dx and df/dy of the function"""
-        Ra, Rs = self.spherical._sort_ra_rs(Ra, Rs)
+        Ra, Rs = self._spherical._sort_ra_rs(Ra, Rs)
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        e = param_util.q2e(q)
+        e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
-        scale = sigma0 * Ra * Rs / (Rs - Ra)
-        f_x_a, f_y_a = self.pie._complex_deriv(x_, y_, Ra, e)
-        f_x_s, f_y_s = self.pie._complex_deriv(x_, y_, Rs, e)
-        f_x, f_y = util.rotate(f_x_a / Ra - f_x_s / Rs,
-                               f_y_a / Ra - f_y_s / Rs,
+        scale = 2 * sigma0 * Ra * Rs / (Rs - Ra)
+        f_x_a, f_y_a = self._pie._complex_deriv(x_, y_, Ra, e)
+        f_x_s, f_y_s = self._pie._complex_deriv(x_, y_, Rs, e)
+        f_x, f_y = util.rotate(f_x_a - f_x_s,
+                               f_y_a - f_y_s,
                                -phi)
         return scale * f_x, scale * f_y
 
     def hessian(self, x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0):
         """Returns Hessian matrix of function"""
-        Ra, Rs = self.spherical._sort_ra_rs(Ra, Rs)
+        Ra, Rs = self._spherical._sort_ra_rs(Ra, Rs)
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        e = param_util.q2e(q)
+        e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
-        scale = sigma0 * Ra * Rs / (Rs - Ra)
-        f_xx_a, f_xy_a, f_yx_a, f_yy_a = self.pie._complex_hessian(x_, y_, Ra, e, q)
-        f_xx_s, f_xy_s, f_yx_s, f_yy_s = self.pie._complex_hessian(x_, y_, Rs, e, q)
-        f_xx, f_xy, f_yx, f_yy = self.pie._hessian_rotate(f_xx_a / Ra - f_xx_s / Rs,
-                                                          f_xy_a / Ra - f_xy_s / Rs,
-                                                          f_yx_a / Ra - f_yx_s / Rs,
-                                                          f_yy_a / Ra - f_yy_s / Rs,
-                                                          -phi)
+        scale = 2 * sigma0 * Ra * Rs / (Rs - Ra)
+        f_xx_a, f_xy_a, f_yx_a, f_yy_a = self._pie._complex_hessian(x_, y_, Ra, e, q)
+        f_xx_s, f_xy_s, f_yx_s, f_yy_s = self._pie._complex_hessian(x_, y_, Rs, e, q)
+        f_xx, f_xy, f_yx, f_yy = self._pie._hessian_rotate(f_xx_a - f_xx_s,
+                                                           f_xy_a - f_xy_s,
+                                                           f_yx_a - f_yx_s,
+                                                           f_yy_a - f_yy_s,
+                                                           -phi)
         return scale * f_xx, scale * f_xy, scale * f_yx, scale * f_yy
 
     def density_2d(self, x, y, rho0, Ra, Rs, e1, e2, center_x=0, center_y=0):
@@ -131,10 +139,10 @@ class DPIE(LensProfileBase):
         :param center_y: center of profile
         :return: projected density
         """
-        Ra, Rs = self.spherical._sort_ra_rs(Ra, Rs)
+        Ra, Rs = self._spherical._sort_ra_rs(Ra, Rs)
         sigma0 = self.rho2sigma(rho0, Ra, Rs)
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        e = param_util.q2e(q)
+        e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
         r_em2 = x_ ** 2 / (1. + e) ** 2 + y_ ** 2 / (1. - e) ** 2
         scale = sigma0 * Ra * Rs / (Rs - Ra)
@@ -152,7 +160,7 @@ class DPIE(LensProfileBase):
         :param e2:
         :return:
         """
-        return self.spherical.mass_3d_lens(r, sigma0, Ra, Rs)
+        return self._spherical.mass_3d_lens(r, sigma0, Ra, Rs)
 
     def mass_tot(self, rho0, Ra, Rs):
         """Total mass within the profile.
@@ -162,19 +170,28 @@ class DPIE(LensProfileBase):
         :param Rs: transition radius from logarithmic slope -2 to -4
         :return: total mass
         """
-        return self.spherical.mass_tot(rho0, Ra, Rs)
+        return self._spherical.mass_tot(rho0, Ra, Rs)
 
     @staticmethod
     def sigma2theta_E(sigma0, Ra, Rs):
-        return 2 * Ra * Rs**2 / (Rs**2 - Ra**2) * sigma0
+        return 2 * Ra * sigma0
 
     @staticmethod
     def theta_E2sigma(theta_E, Ra, Rs):
-        return (Rs**2 - Ra**2) / (2 * Ra * Rs ** 2) * theta_E
+        return theta_E / (2 * Ra)
 
     def sigma2rho(self, sigma0, Ra, Rs):
-        return self.spherical.sigma2rho(sigma0, Ra, Rs)
+        return self._spherical.sigma2rho(sigma0, Ra, Rs)
 
     def rho2sigma(self, rho0, Ra, Rs):
-        return self.spherical.rho2sigma(rho0, Ra, Rs)
+        return self._spherical.rho2sigma(rho0, Ra, Rs)
 
+    def _sort_ra_rs(self, Ra, Rs):
+        """
+        sorts Ra and Rs to make sure Rs > Ra
+        """
+        Ra = np.where(Ra < Rs, Ra, Rs)
+        Rs = np.where(Ra > Rs, Ra, Rs)
+        Ra = np.maximum(self._r_min, Ra)
+        Rs = np.where(Rs > Ra + self._r_min, Rs, Rs + self._r_min)
+        return Ra, Rs

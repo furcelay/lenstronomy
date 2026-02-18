@@ -1,18 +1,20 @@
+__author__ = "furcelay"
+
 from lenstronomy.Util import param_util, util
 from lenstronomy.LensModel.Profiles.base_profile import LensProfileBase
 import numpy as np
 
-__all__ = ["PIE"]
+__all__ = ["PseudoIsothermalEllipse"]
 
 
-class PIE(LensProfileBase):
+class PseudoIsothermalEllipse(LensProfileBase):
     """
     class to compute the PSEUDO ISOTHERMAL ELLIPTICAL MASS DISTRIBUTION (PIEMD or PIE)
     based on Kassiola & Kovner (1993) https://articles.adsabs.harvard.edu/pdf/1993ApJ...417..450K  Section 4.1.
 
     This profile is fully elliptical, with ellipticity :math:`\\eps = (1 - q) / (1 + q)`
 
-    Module name: 'PIE';
+    Module name: 'PSEUDO_ISOTHERMAL_ELLIPSE';
 
     The 3D density distribution is
 
@@ -44,7 +46,7 @@ class PIE(LensProfileBase):
     .. math::
         \\theta_E = 2 Rw \\sigma_0
 
-     The fiducial velocity dispersion :math:`\\sigma_{dPIE}` is
+     The fiducial velocity dispersion :math:`\\sigma_{PIE}` is
 
     .. math::
         \\sigma_{PIE}^2 = \\frac{c^2}{6 \\pi}{D_L}{D_{LS}} \\theta_E
@@ -72,7 +74,7 @@ class PIE(LensProfileBase):
     }
 
     def __init__(self):
-        super(PIE, self).__init__()
+        super(PseudoIsothermalEllipse, self).__init__()
 
     def function(self, x, y, sigma0, Rw, e1=0, e2=0, center_x=0, center_y=0):
         """Spherical lensing potential.
@@ -88,7 +90,8 @@ class PIE(LensProfileBase):
         :return: lensing potential
         """
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        e = param_util.q2e(q)
+        q = np.clip(q, 1e-4, 1 - 1e-4)
+        e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
         theta_E = self.sigma2theta_E(sigma0, Rw)
         f_ = self._complex_potential(x_, y_, Rw, e)
@@ -97,7 +100,8 @@ class PIE(LensProfileBase):
     def derivatives(self, x, y, sigma0, Rw, e1, e2, center_x=0, center_y=0):
         """Returns df/dx and df/dy of the function"""
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        e = param_util.q2e(q)
+        q = np.clip(q, 1e-4, 1 - 1e-4)
+        e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
         theta_E = self.sigma2theta_E(sigma0, Rw)
         f_x_, f_y_ = self._complex_deriv(x_, y_, Rw, e)
@@ -107,7 +111,8 @@ class PIE(LensProfileBase):
     def hessian(self, x, y, sigma0, Rw, e1, e2, center_x=0, center_y=0):
         """Returns Hessian matrix of function"""
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        e = param_util.q2e(q)
+        q = np.clip(q, 1e-4, 1 - 1e-4)
+        e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
         theta_E = self.sigma2theta_E(sigma0, Rw)
         f_xx_, f_xy_, f_yx_, f_yy_ = self._complex_hessian(x_, y_, Rw, e, q)
@@ -127,7 +132,7 @@ class PIE(LensProfileBase):
         """
         sigma0 = self.rho2sigma(rho0, Rw)
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        e = param_util.q2e(q)
+        e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
         r_em2 = x_ ** 2 / (1. + e) ** 2 + y_ ** 2 / (1. - e) ** 2
         theta_E = self.sigma2theta_E(sigma0, Rw)
@@ -155,29 +160,27 @@ class PIE(LensProfileBase):
         """
         computes I_w from Eq 4.1.2 in Kassiola & Kovner
 
-        I = prefac * i * log(u / v))
+        I = coef * i * log(u / v))
         f_x, f_y = Re(I), Im(I)
         """
         sqe = np.sqrt(e)
-        cx = (1. + e) * (1. + e)
-        cy = (1. - e) * (1. - e)
-        r_em2 = x**2 / (1. + e)**2 + y**2 / (1. - e)**2
-        wr_em = np.sqrt(Rw ** 2 + r_em2)
-        u = cx * x + (-cy * y + 2 * sqe * wr_em) * 1J
-        v = x + (-y + 2 * Rw * sqe) * 1J
-        z_log = np.log(u / v)
-        prefac = -0.5 * (1. - e**2) / sqe
-        return - prefac * np.imag(z_log), prefac * np.real(z_log)
+        cx1 = (1.0 - e) / (1.0 + e)
+        r_em2 = x**2 / (1.0 + e)**2 + y**2 / (1.0 - e)**2
+        coef = -0.5j * (1.0 - e * e) / sqe
+        u = cx1 * x + 1j * (2.0 * sqe * np.sqrt(Rw * Rw + r_em2) - y / cx1)
+        v = x + 1j * (2.0 * Rw * sqe - y)
+        I = coef * np.log(u / v)
+        return np.real(I), np.imag(I)
     
     @staticmethod
     def _complex_hessian(x, y, Rw, e, q):
         """
         I = (f_x + f_y * i)
         with I from Eq 4.1.2 in Kassiola & Kovner
-        I = prefac * i * log(u / v)) --> I' = prefac * i * (u'/u - v'/v)
+        I = coef * i * log(u / v)) --> I' = coef * i * (u'/u - v'/v)
 
         u = cx * x + (-cy * y + 2 * sqe * wr_em) * i
-        v = x + (-y + 2 * Rw * sqe) *i
+        v = x + (-y + 2 * Rw * sqe) * i
 
         du_dx = cx + 2 * sqe * x / (cx * wr_em) * i
         du_dy = (-cy + 2 * sqe * y / (cy * wr_em)) * i
@@ -194,9 +197,9 @@ class PIE(LensProfileBase):
 
         sqe = np.sqrt(e)
         qinv = 1. / q
-        cx = (1. + e) * (1. + e)
-        cy = (1. - e) * (1. - e)
-        prefac = 0.5 * (1. - e ** 2) / sqe
+        cx = (1. + e) ** 2
+        cy = (1. - e) ** 2
+        coef = 0.5 * (1. - e ** 2) / sqe
         r_em2 = x ** 2 / cx + y ** 2 / cy
         wr_em = np.sqrt(Rw ** 2 + r_em2)
 
@@ -204,23 +207,23 @@ class PIE(LensProfileBase):
         v_im = 2. * Rw * sqe - y
         v2 = x ** 2 + v_im ** 2  # |v|**2
 
-        f_xx = prefac * (q * (2. * sqe * x ** 2 / cx / wr_em - 2. * sqe * wr_em + y * qinv) / u2 + v_im / v2)
-        f_xy = f_yx = prefac * ((2 * sqe * x * y * q / cy / wr_em - x) / u2 + x / v2)
-        f_yy = prefac * ((2 * sqe * wr_em * qinv - y * qinv ** 2 - 4 * e * y / cy +
+        f_xx = coef * (q * (2. * sqe * x ** 2 / cx / wr_em - 2. * sqe * wr_em + y * qinv) / u2 + v_im / v2)
+        f_xy = f_yx = coef * ((2 * sqe * x * y * q / cy / wr_em - x) / u2 + x / v2)
+        f_yy = coef * ((2 * sqe * wr_em * qinv - y * qinv ** 2 - 4 * e * y / cy +
                          2 * sqe * y ** 2 / cy / wr_em * qinv) / u2 - v_im / v2)
         return f_xx, f_xy, f_yx, f_yy
 
     @staticmethod
     def _complex_potential(x, y, Rw, e):
         sqe = np.sqrt(e)
-        prefac = .5 * (1. - e ** 2) / sqe
+        coef = 0.5 * (1. - e ** 2) / sqe
         cx = (1. + e) * (1. + e)
         cy = (1. - e) * (1. - e)
         r_em2 = x * x / cx + y * y / cy
         e1 = 2. * sqe / (1 - e)
         e2 = 2. * sqe / (1 + e)
         z = np.sqrt(x * x + y * y)
-        eta = -.5 * np.asinh(e1 * y / z) + .5 * np.asin(e2 * x / z) * 1J
+        eta = -0.5 * np.asinh(e1 * y / z) + 0.5 * np.asin(e2 * x / z) * 1J
         zeta = 0.5 * np.log((np.sqrt(r_em2) + np.sqrt(Rw * Rw + r_em2)) / Rw) + 0J
         b1 = np.cosh(eta + zeta)
         b2 = np.cosh(eta - zeta)
@@ -230,7 +233,7 @@ class PIE(LensProfileBase):
         c2 = np.sinh(zeta * 2.) * a2
         ckk = c1 + c2
 
-        return prefac * Rw / np.sqrt(r_em2) * (ckk.imag * x - ckk.real * y)
+        return coef * Rw / np.sqrt(r_em2) * (ckk.imag * x - ckk.real * y)
 
     @staticmethod
     def _hessian_rotate(f_xx, f_xy, f_yx, f_yy, phi):
