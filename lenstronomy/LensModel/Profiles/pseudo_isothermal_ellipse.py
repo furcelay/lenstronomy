@@ -90,17 +90,17 @@ class PseudoIsothermalEllipse(LensProfileBase):
         :return: lensing potential
         """
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        q = np.clip(q, 1e-4, 1 - 1e-4)
         e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
         theta_E = self.sigma2theta_E(sigma0, Rw)
         f_ = self._complex_potential(x_, y_, Rw, e)
+        # this implementation gives nan for x, y = 0, 0, but converges to 0
+        f_ = np.where((x == 0) & (y == 0), 0, f_)
         return theta_E * f_
 
     def derivatives(self, x, y, sigma0, Rw, e1, e2, center_x=0, center_y=0):
         """Returns df/dx and df/dy of the function"""
         phi, q = param_util.ellipticity2phi_q(e1, e2)
-        q = np.clip(q, 1e-4, 1 - 1e-4)
         e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
         x_, y_ = util.rotate(x - center_x, y - center_y, phi)
         theta_E = self.sigma2theta_E(sigma0, Rw)

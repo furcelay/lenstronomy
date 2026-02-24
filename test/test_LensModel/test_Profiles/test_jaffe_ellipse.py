@@ -86,5 +86,16 @@ class TestPJAFFESpherical(object):
         npt.assert_almost_equal(f_yx, f_yx_sph, decimal=3)
         npt.assert_almost_equal(f_yy, f_yy_sph, decimal=3)
 
+    def test_density_2d(self):
+        x = np.array([1])
+        y = np.array([2])
+        sigma0 = 1.0
+        Ra, Rs = 0.5, 0.8
+        q, phi_G = 0.8, 0
+        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
+        rho0 = self.profile.sigma2rho(sigma0, Ra, Rs)
+        kappa = self.profile.density_2d(x, y, rho0, Ra, Rs, e1, e2, center_x=0, center_y=0)
+        npt.assert_almost_equal(kappa, 0.01638378, decimal=8)
+
 if __name__ == "__main__":
     pytest.main()
