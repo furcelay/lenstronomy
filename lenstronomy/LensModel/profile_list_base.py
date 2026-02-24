@@ -73,8 +73,8 @@ _SUPPORTED_MODELS = [
     "NIE_POTENTIAL",
     "NIE_SIMPLE",
     "PEMD",
-    "JAFFE_ELLIPSE",
     "PJAFFE",
+    "PJAFFE_ELLIPSE_KAPPA",
     "PJAFFE_ELLIPSE_POTENTIAL",
     "POINT_MASS",
     "PSEUDO_DPL",
@@ -657,6 +657,11 @@ def lens_class(
         )
 
         return PseudoJaffeEllipsePotential(**profile_kwargs)
+    elif lens_type == "PJAFFE_ELLIPSE_KAPPA":
+        from lenstronomy.LensModel.Profiles.pseudo_jaffe_ellipse_kappa import (
+            PseudoJaffeEllipseKappa,
+        )
+        return PseudoJaffeEllipseKappa(**profile_kwargs)
     elif lens_type == "POINT_MASS":
         from lenstronomy.LensModel.Profiles.point_mass import PointMass
 
@@ -665,8 +670,13 @@ def lens_class(
         from lenstronomy.LensModel.Profiles.pseudo_double_powerlaw import (
             PseudoDoublePowerlaw,
         )
-
         return PseudoDoublePowerlaw(**profile_kwargs)
+
+    elif lens_type == "PSEUDO_ISOTHERMAL_ELLIPSE":
+        from lenstronomy.LensModel.Profiles.pseudo_isothermal_ellipse import (
+            PseudoIsothermalEllipse,
+        )
+        return PseudoIsothermalEllipse(**profile_kwargs)
     elif lens_type == "RADIAL_INTERPOL":
         from lenstronomy.LensModel.Profiles.radial_interpolated import (
             RadialInterpolate,

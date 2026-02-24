@@ -6,10 +6,10 @@ from lenstronomy.Util import param_util, util
 from lenstronomy.LensModel.Profiles.base_profile import LensProfileBase
 import numpy as np
 
-__all__ = ["JaffeEllipse"]
+__all__ = ["PseudoJaffeEllipseKappa"]
 
 
-class JaffeEllipse(LensProfileBase):
+class PseudoJaffeEllipseKappa(LensProfileBase):
     """
     class to compute the DUAL PSEUDO ISOTHERMAL ELLIPTICAL MASS DISTRIBUTION (dPIEMD or dPIE)
     based on Eliasdottir (2007) https://arxiv.org/pdf/0710.5636.pdf Appendix A
@@ -20,7 +20,7 @@ class JaffeEllipse(LensProfileBase):
     The profile is composed by two PseudoIsothermalEllipse with different scale radius, making a flat core within Ra
     and a steep decay from Rs.
 
-    Module name: 'JAFFE_ELLIPSE';
+    Module name: 'PJAFFE_ELLIPSE_KAPPA';
 
     The 3D density distribution is
 
@@ -84,7 +84,7 @@ class JaffeEllipse(LensProfileBase):
     def __init__(self):
         self._spherical = PseudoJaffe()
         self._pie = PseudoIsothermalEllipse()
-        super(JaffeEllipse, self).__init__()
+        super(PseudoJaffeEllipseKappa, self).__init__()
 
     def function(self, x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0):
         """Returns the potential, which is equal to the one of the PJAFFE_ELLIPSE_POTENTIAL."""

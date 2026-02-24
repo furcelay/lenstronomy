@@ -1,8 +1,8 @@
 __author__ = "furcelay"
 
 
-from lenstronomy.LensModel.Profiles.jaffe_ellipse import (
-    JaffeEllipse,
+from lenstronomy.LensModel.Profiles.pseudo_jaffe_ellipse_kappa import (
+    PseudoJaffeEllipseKappa,
 )
 import lenstronomy.Util.param_util as param_util
 
@@ -11,11 +11,11 @@ import numpy.testing as npt
 import pytest
 
 
-class TestPJAFFESpherical(object):
+class TestPJAFFEKappa(object):
     """Tests the Gaussian methods."""
 
     def setup_method(self):
-        self.profile = JaffeEllipse()
+        self.profile = PseudoJaffeEllipseKappa()
         self.spherical = self.profile._spherical
 
     def test_function(self):
