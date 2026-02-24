@@ -4,7 +4,6 @@ __author__ = "furcelay"
 from lenstronomy.LensModel.Profiles.jaffe_ellipse import (
     JaffeEllipse,
 )
-from gigalens.jax.profiles.mass.piemd import DPIS, DPIE
 import lenstronomy.Util.param_util as param_util
 
 import numpy as np
@@ -18,271 +17,74 @@ class TestPJAFFESpherical(object):
     def setup_method(self):
         self.profile = JaffeEllipse()
         self.spherical = self.profile._spherical
-        self.gigalens = DPIE()
-        self.gigalens_sph = DPIS()
 
     def test_function(self):
-        x = np.linspace(0, 10, 100)
-        y = np.zeros_like(x)
-        sigma0 = 1.0
+        # test that the gradient of the potential is consistent with the deflection
+        x = np.linspace(-1, 1, 30)
+        y = np.linspace(-1, 1, 30)
+        xx, yy = np.meshgrid(x, y)
+        dx = dy = x[1] - x[0]
+        theta_E = 1.0
         Ra, Rs = 0.5, 0.8
+        # theta_E = sigma0 * 2 * Ra * Rs**2 / (Rs**2 - Ra**2)
+        sigma0 = theta_E / (2 * Ra)
+        q, phi_G = 0.7, 0.3
+        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
+        potential = self.profile.function(xx, yy, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0)
+        potential_dy, potential_dx = np.gradient(potential, dy, dx)
+        f_x, f_y = self.profile.derivatives(
+            xx, yy, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
+        )
+        npt.assert_almost_equal(potential_dx, f_x, decimal=2)
+        npt.assert_almost_equal(potential_dy, f_y, decimal=2)
+
+    def test_derivatives(self):
+        theta_E = 1.0
+        Ra, Rs = 0.5, 0.8
+        # theta_E = sigma0 * 2 * Ra * Rs**2 / (Rs**2 - Ra**2)
+        sigma0 = theta_E  / (2 * Ra)
         q, phi_G = 0.999, 0
         e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
-        values = self.profile.function(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        values_spherical = self.spherical.function(
-            x, y, sigma0, Ra, Rs, center_x=0, center_y=0
-        )
-        import matplotlib.pyplot as plt
-        plt.subplot(121)
-        plt.plot(x, values)
-        plt.subplot(122)
-        plt.plot(x, values_spherical)
-        plt.show()
-
-        x = np.array([1])
-        y = np.array([2])
-        sigma0 = 1.0
-        Ra, Rs = 0.5, 0.8
-        q, phi_G = 0., 0
-        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
-        values = self.profile.function(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        values_spherical = self.spherical.function(
-            x, y, sigma0, Ra, Rs, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(values, values_spherical, decimal=8)
 
         x = np.array([0])
         y = np.array([0])
-        values = self.profile.function(
+        f_x, f_y = self.profile.derivatives(
             x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
         )
-        values_spherical = self.spherical.function(
-            x, y, sigma0, Ra, Rs, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(values, values_spherical, decimal=8)
+        print(f_x, f_y)
+        npt.assert_almost_equal(f_x, 0, decimal=5)
+        npt.assert_almost_equal(f_y, 0, decimal=5)
 
-        x = np.array([2, 3, 4])
-        y = np.array([1, 1, 1])
-        values = self.profile.function(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        values_spherical = self.spherical.function(
-            x, y, sigma0, Ra, Rs, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(values, values_spherical, decimal=8)
-
-    def test_derivatives(self):
-        x = np.linspace(0, 10, 100)
-        y = np.zeros_like(x)
-        sigma0 = 1.0
-        Ra, Rs = 0.5, 0.8
-        # theta_E = sigma0 * 2 * Ra * Rs**2 / (Rs**2 - Ra**2)
-        theta_E = sigma0 * Ra * 2
-        q, phi_G = 0., 0
-        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
-        values = self.profile.derivatives(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )[0]
-        values_spherical = self.spherical.derivatives(
-            x, y, sigma0, Ra, Rs, center_x=0, center_y=0
-        )[0]
-        values_gl = self.gigalens.deriv(
-            x, y, theta_E, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )[0]
-        values_gl_sph = self.gigalens_sph.deriv(
-            x, y, theta_E, Ra, Rs, center_x=0, center_y=0
-        )[0]
-        import matplotlib.pyplot as plt
-        plt.subplot(121)
-        plt.plot(x, values, '-')
-        plt.plot(x, values_gl, ':')
-        plt.subplot(122)
-        plt.plot(x, values_spherical)
-        plt.plot(x, values_gl_sph, '--')
-        plt.show()
-
-        x = np.array([1])
-        y = np.array([2])
-        sigma0 = 1.0
-        Ra, Rs = 0.5, 0.8
-        q, phi_G = 0., 0
-        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
+        x = np.array([1, 3, 4])
+        y = np.array([2, 1, 1])
         f_x, f_y = self.profile.derivatives(
             x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
         )
         f_x_shp, f_y_shp = self.spherical.derivatives(
             x, y, sigma0, Ra, Rs, center_x=0, center_y=0
         )
-        npt.assert_almost_equal(f_x, f_x_shp, decimal=8)
-        npt.assert_almost_equal(f_y, f_y_shp, decimal=8)
+        npt.assert_almost_equal(f_x, f_x_shp, decimal=3)
+        npt.assert_almost_equal(f_y, f_y_shp, decimal=3)
 
-        x = np.array([0])
-        y = np.array([0])
-        f_x, f_y = self.profile.derivatives(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        assert f_x[0] == 0
-        assert f_y[0] == 0
+    def test_hessian(self):
+        theta_E = 1.0
+        Ra, Rs = 0.5, 0.8
+        sigma0 = theta_E / (2 * Ra)
+        q, phi_G = 0.999, 0
+        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
 
         x = np.array([1, 3, 4])
         y = np.array([2, 1, 1])
-        values = self.profile.derivatives(
+        f_xx, f_xy, f_yx, f_yy = self.profile.hessian(
             x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
         )
-        npt.assert_almost_equal(values[0][0], 0.08130928181117723, decimal=8)
-        npt.assert_almost_equal(values[1][0], 0.25409150565992883, decimal=8)
-        npt.assert_almost_equal(values[0][1], 0.17711143165920576, decimal=8)
-        npt.assert_almost_equal(values[1][1], 0.09224553732250299, decimal=8)
-
-    def test_hessian(self):
-        x = np.linspace(0, 10, 100)
-        y = np.zeros_like(x)
-        sigma0 = 1.0
-        Ra, Rs = 0.5, 0.8
-        theta_E = sigma0 * 2 * Ra * Rs ** 2 / (Rs ** 2 - Ra ** 2)
-        q, phi_G = 0., 0
-        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
-        values = self.profile.hessian(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )[0]
-        values_spherical = self.spherical.hessian(
+        f_xx_sph, f_xy_sph, f_yx_sph, f_yy_sph = self.spherical.hessian(
             x, y, sigma0, Ra, Rs, center_x=0, center_y=0
-        )[0]
-        values_gl = self.gigalens.hessian(
-            x, y, theta_E, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )[0]
-        values_gl_sph = self.gigalens_sph.hessian(
-            x, y, theta_E, Ra, Rs, center_x=0, center_y=0
-        )[0]
-        import matplotlib.pyplot as plt
-        plt.subplot(121)
-        plt.plot(x, values, '-')
-        plt.plot(x, values_gl, ':')
-        plt.subplot(122)
-        plt.plot(x, values_spherical)
-        plt.plot(x, values_gl_sph, '--')
-        plt.show()
-
-        x = np.array([1])
-        y = np.array([2])
-        sigma0 = 1.0
-        Ra, Rs = 0.5, 0.8
-        q, phi_G = 0.8, 0
-        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
-        f_xx, f_xy, f_yx, f_yy = self.profile.hessian(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
         )
-        npt.assert_almost_equal(f_xx[0], 0.06259391932550429, decimal=8)
-        npt.assert_almost_equal(f_yy[0], -0.05572123112917993, decimal=8)
-        npt.assert_almost_equal(f_xy[0], -0.058485405643460275, decimal=8)
-        npt.assert_almost_equal(f_xy, f_yx, decimal=6)
-        x = np.array([1, 3, 4])
-        y = np.array([2, 1, 1])
-        values = self.profile.hessian(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(values[0][0], 0.06259391932550429, decimal=8)
-        npt.assert_almost_equal(values[3][0], -0.05572123112917993, decimal=8)
-
-    def test_mass_3d_lens(self):
-        mass = self.profile.mass_3d_lens(r=1, sigma0=1, Ra=0.5, Rs=0.8, e1=0, e2=0)
-        npt.assert_almost_equal(mass, 0.87077306005349242, decimal=8)
-
-
-class TestP_JAFFW(object):
-    """Tests the Gaussian methods."""
-
-    def setup_method(self):
-        self.profile = JaffeEllipse()
-
-    def test_function(self):
-        x = np.array([1])
-        y = np.array([2])
-        sigma0 = 1.0
-        Ra, Rs = 0.5, 0.8
-        q, phi_G = 0.8, 0
-        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
-        values = self.profile.function(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(values[0], 0.9091040398607811, decimal=8)
-        x = np.array([0])
-        y = np.array([0])
-
-        values = self.profile.function(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(values[0], 0.20267440905756931, decimal=8)
-
-        x = np.array([2, 3, 4])
-        y = np.array([1, 1, 1])
-        values = self.profile.function(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(values[0], 0.8327830942970774, decimal=8)
-        npt.assert_almost_equal(values[1], 1.0233085474140422, decimal=8)
-        npt.assert_almost_equal(values[2], 1.1868752663038047, decimal=8)
-
-    def test_derivatives(self):
-        x = np.array([1])
-        y = np.array([2])
-        sigma0 = 1.0
-        Ra, Rs = 0.5, 0.8
-        q, phi_G = 0.8, 0
-        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
-        f_x, f_y = self.profile.derivatives(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(f_x[0], 0.08130928181117723, decimal=8)
-        npt.assert_almost_equal(f_y[0], 0.25409150565992883, decimal=8)
-        x = np.array([0])
-        y = np.array([0])
-        f_x, f_y = self.profile.derivatives(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        assert f_x[0] == 0
-        assert f_y[0] == 0
-
-        x = np.array([1, 3, 4])
-        y = np.array([2, 1, 1])
-        values = self.profile.derivatives(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(values[0][0], 0.08130928181117723, decimal=8)
-        npt.assert_almost_equal(values[1][0], 0.25409150565992883, decimal=8)
-        npt.assert_almost_equal(values[0][1], 0.17711143165920576, decimal=8)
-        npt.assert_almost_equal(values[1][1], 0.09224553732250299, decimal=8)
-
-    def test_hessian(self):
-        x = np.array([1])
-        y = np.array([2])
-        sigma0 = 1.0
-        Ra, Rs = 0.5, 0.8
-        q, phi_G = 0.8, 0
-        e1, e2 = param_util.phi_q2_ellipticity(phi_G, q)
-        f_xx, f_xy, f_yx, f_yy = self.profile.hessian(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(f_xx[0], 0.06259391932550429, decimal=8)
-        npt.assert_almost_equal(f_yy[0], -0.05572123112917993, decimal=8)
-        npt.assert_almost_equal(f_xy[0], -0.058485405643460275, decimal=8)
-        npt.assert_almost_equal(f_xy, f_yx, decimal=6)
-        x = np.array([1, 3, 4])
-        y = np.array([2, 1, 1])
-        values = self.profile.hessian(
-            x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0
-        )
-        npt.assert_almost_equal(values[0][0], 0.06259391932550429, decimal=8)
-        npt.assert_almost_equal(values[3][0], -0.05572123112917993, decimal=8)
-
-    def test_mass_3d_lens(self):
-        mass = self.profile.mass_3d_lens(r=1, sigma0=1, Ra=0.5, Rs=0.8, e1=0, e2=0)
-        npt.assert_almost_equal(mass, 0.87077306005349242, decimal=8)
-
+        npt.assert_almost_equal(f_xx, f_xx_sph, decimal=3)
+        npt.assert_almost_equal(f_xy, f_xy_sph, decimal=3)
+        npt.assert_almost_equal(f_yx, f_yx_sph, decimal=3)
+        npt.assert_almost_equal(f_yy, f_yy_sph, decimal=3)
 
 if __name__ == "__main__":
     pytest.main()

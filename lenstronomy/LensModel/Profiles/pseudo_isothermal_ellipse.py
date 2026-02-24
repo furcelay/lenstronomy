@@ -158,7 +158,7 @@ class PseudoIsothermalEllipse(LensProfileBase):
 
     def _complex_deriv(self, x, y, Rw, e):
         """
-        computes I_w from Eq 4.1.2 in Kassiola & Kovner
+        computes I_w from Eq 4.1.2 in Kassiola & Kovner (1993)
 
         I = coef * i * log(u / v))
         f_x, f_y = Re(I), Im(I)
@@ -176,7 +176,7 @@ class PseudoIsothermalEllipse(LensProfileBase):
     def _complex_hessian(x, y, Rw, e, q):
         """
         I = (f_x + f_y * i)
-        with I from Eq 4.1.2 in Kassiola & Kovner
+        with I from Eq 4.1.2 in Kassiola & Kovner (1993)
         I = coef * i * log(u / v)) --> I' = coef * i * (u'/u - v'/v)
 
         u = cx * x + (-cy * y + 2 * sqe * wr_em) * i
@@ -215,25 +215,44 @@ class PseudoIsothermalEllipse(LensProfileBase):
 
     @staticmethod
     def _complex_potential(x, y, Rw, e):
-        sqe = np.sqrt(e)
-        coef = 0.5 * (1. - e ** 2) / sqe
-        cx = (1. + e) * (1. + e)
-        cy = (1. - e) * (1. - e)
-        r_em2 = x * x / cx + y * y / cy
-        e1 = 2. * sqe / (1 - e)
-        e2 = 2. * sqe / (1 + e)
-        z = np.sqrt(x * x + y * y)
-        eta = -0.5 * np.asinh(e1 * y / z) + 0.5 * np.asin(e2 * x / z) * 1J
-        zeta = 0.5 * np.log((np.sqrt(r_em2) + np.sqrt(Rw * Rw + r_em2)) / Rw) + 0J
-        b1 = np.cosh(eta + zeta)
-        b2 = np.cosh(eta - zeta)
-        a1 = np.log(np.cosh(eta)**2 / b1 * b2)
-        a2 = np.log(b1 / b2)
-        c1 = np.sinh(eta * 2.) * a1
-        c2 = np.sinh(zeta * 2.) * a2
-        ckk = c1 + c2
+        """Potential from eqs 4.1.5 to 4.1.8 in Kassiola & Kovner (1993)"""
+        phi = np.arctan2(y, x)
 
-        return coef * Rw / np.sqrt(r_em2) * (ckk.imag * x - ckk.real * y)
+        cx = (1.0 + e) ** 2
+        cy = (1.0 - e) ** 2
+        r_em_sq = x ** 2 / cx + y ** 2 / cy
+        r_em = np.sqrt(r_em_sq)
+        wr_em = np.sqrt(Rw ** 2 + r_em_sq)
+
+        # zeta
+        # assume w>0; if w==0 this will raise / give -inf
+        zeta = 0.5 * np.log((r_em + wr_em) / Rw)
+
+        # eta:
+        sqrt_e = np.sqrt(e)
+        arg_asinh = (2.0 * sqrt_e / (1.0 - e)) * np.sin(phi)
+        eta_real = -0.5 * np.arcsinh(arg_asinh)
+
+        arg_asin = (2.0 * sqrt_e / (1.0 + e)) * np.cos(phi)
+        # ensure complex input so np.arcsin produces complex values when necessary
+        arg_asin_c = arg_asin.astype(np.complex128)
+        eta_imag = 0.5j * np.arcsin(arg_asin_c)
+
+        eta = eta_real + eta_imag
+
+        # Now compute K
+        cosh_eta = np.cosh(eta)
+        cosh_eta_p_z = np.cosh(eta + zeta)
+        cosh_eta_m_z = np.cosh(eta - zeta)
+
+        term1 = np.sinh(2.0 * eta) * np.log((cosh_eta ** 2) / (cosh_eta_p_z * cosh_eta_m_z))
+        term2 = np.sinh(2.0 * zeta) * np.log(cosh_eta_p_z / cosh_eta_m_z)
+
+        K = term1 + term2
+
+        # finally the potential
+        coef = Rw * (1. - e ** 2) / (2 * r_em * np.sqrt(e))
+        return coef * np.imag((x - 1j * y) * K)
 
     @staticmethod
     def _hessian_rotate(f_xx, f_xy, f_yx, f_yy, phi):

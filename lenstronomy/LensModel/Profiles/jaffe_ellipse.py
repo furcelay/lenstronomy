@@ -87,7 +87,7 @@ class JaffeEllipse(LensProfileBase):
         super(JaffeEllipse, self).__init__()
 
     def function(self, x, y, sigma0, Ra, Rs, e1, e2, center_x=0, center_y=0):
-        """Returns double integral of dPIE profile."""
+        """Returns the potential, which is equal to the one of the PJAFFE_ELLIPSE_POTENTIAL."""
         Ra, Rs = self._spherical._sort_ra_rs(Ra, Rs)
         phi, q = param_util.ellipticity2phi_q(e1, e2)
         e = np.minimum(np.sqrt(e1 ** 2 + e2 ** 2), 0.9999)
