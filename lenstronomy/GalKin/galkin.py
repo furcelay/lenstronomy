@@ -76,7 +76,10 @@ class Galkin(GalkinModel, GalkinObservation):
             analytic_kinematics=analytic_kinematics,
         )
         GalkinObservation.__init__(
-            self, kwargs_aperture=kwargs_aperture, kwargs_psf=kwargs_psf
+            self,
+            kwargs_aperture=kwargs_aperture,
+            kwargs_psf=kwargs_psf,
+            backend="galkin",
         )
 
     def dispersion(
@@ -261,7 +264,7 @@ class Galkin(GalkinModel, GalkinObservation):
         kwargs_mass,
         kwargs_light,
         kwargs_anisotropy,
-        supersampling_factor=1,
+        supersampling_factor=None,
         voronoi_bins=None,
     ):
         """Computes the velocity dispersion in each Integral Field Unit.
@@ -278,7 +281,14 @@ class Galkin(GalkinModel, GalkinObservation):
         if hasattr(self.numerics, "lum_weight_int_method"):
             if not self.numerics.lum_weight_int_method:
                 raise ValueError("'lum_weight_int_method' must be True!")
-
+        if (voronoi_bins is not None) and self.aperture_type != "IFU_grid":
+            raise ValueError(
+                "Voronoi bins can only be used with the IFU_grid aperture!"
+            )
+        if self.aperture_type == "IFU_binned":
+            voronoi_bins = self._aperture.bins
+        if supersampling_factor is None:
+            supersampling_factor = self._default_supersampling_factor
         (
             x_grid_supersmapled,
             y_grid_supersmapled,

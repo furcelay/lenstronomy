@@ -6,6 +6,7 @@ __all__ = ["ProfileListBase"]
 _SUPPORTED_MODELS = [
     "ARC_PERT",
     "BLANK_PLANE",
+    "BPL",
     "CHAMELEON",
     "CNFW",
     "CNFW_ELLIPSE_POTENTIAL",
@@ -77,6 +78,7 @@ _SUPPORTED_MODELS = [
     "PJAFFE_ELLIPSE_KAPPA",
     "PJAFFE_ELLIPSE_POTENTIAL",
     "POINT_MASS",
+    "POINT_MASS_LOG_SCALED",
     "PSEUDO_DPL",
     "PSEUDO_ISOTHERMAL_ELLIPSE",
     "SERSIC",
@@ -332,6 +334,10 @@ def lens_class(
         from lenstronomy.LensModel.Profiles.blank_plane import BlankPlane
 
         return BlankPlane(**profile_kwargs)
+    elif lens_type == "BPL":
+        from lenstronomy.LensModel.Profiles.bpl import BPL
+
+        return BPL(**profile_kwargs)
     elif lens_type == "CHAMELEON":
         from lenstronomy.LensModel.Profiles.chameleon import Chameleon
 
@@ -666,6 +672,12 @@ def lens_class(
         from lenstronomy.LensModel.Profiles.point_mass import PointMass
 
         return PointMass(**profile_kwargs)
+    elif lens_type == "POINT_MASS_LOG_SCALED":
+        from lenstronomy.LensModel.Profiles.point_mass_log_scaled import (
+            PointMassLogScaled,
+        )
+
+        return PointMassLogScaled(**profile_kwargs)
     elif lens_type == "PSEUDO_DPL":
         from lenstronomy.LensModel.Profiles.pseudo_double_powerlaw import (
             PseudoDoublePowerlaw,

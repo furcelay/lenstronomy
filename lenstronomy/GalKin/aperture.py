@@ -1,6 +1,14 @@
 __author__ = "sibirrer"
 
-from lenstronomy.GalKin.aperture_types import Shell, Slit, IFUShells, Frame, IFUGrid
+from lenstronomy.GalKin.aperture_types import (
+    Shell,
+    Slit,
+    IFUShells,
+    Frame,
+    IFUGrid,
+    IFUBinned,
+    downsample_values_to_bins,
+)
 
 __all__ = ["Aperture"]
 """Class that defines the aperture of the measurement (e.g. slit, integral field
@@ -34,6 +42,8 @@ class Aperture(object):
             self._aperture = Frame(**kwargs_aperture)
         elif aperture_type == "IFU_grid":
             self._aperture = IFUGrid(**kwargs_aperture)
+        elif aperture_type == "IFU_binned":
+            self._aperture = IFUBinned(**kwargs_aperture)
         else:
             raise ValueError(
                 "aperture type %s not implemented! Available are 'slit', 'shell', 'IFU_shells'. "
@@ -50,6 +60,28 @@ class Aperture(object):
         """
         return self._aperture.aperture_select(ra, dec)
 
+    def aperture_sample(self, supersampling_factor):
+        """
+
+        :return: regular (x, y) grid within the aperture to be sampled
+        """
+        return self._aperture.aperture_sample(supersampling_factor)
+
+    def aperture_downsample(self, aperture_samples, supersampling_factor):
+        """
+
+        :param aperture_samples: regular grid of values within the aperture to be integrated
+        :param supersampling_factor: supersampling factor
+        :return: averaged values within the aperture into num_segments
+        """
+        return self._aperture.aperture_downsample(
+            aperture_samples, supersampling_factor
+        )
+
     @property
     def num_segments(self):
         return self._aperture.num_segments
+
+    @property
+    def delta_pix(self):
+        return self._aperture.delta_pix
