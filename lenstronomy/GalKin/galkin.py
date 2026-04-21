@@ -1,5 +1,6 @@
 from lenstronomy.GalKin.observation import GalkinObservation
 from lenstronomy.GalKin.galkin_model import GalkinModel
+from lenstronomy.GalKin.aperture import downsample_values_to_bins
 
 import numpy as np
 from scipy.signal import convolve2d
@@ -192,34 +193,18 @@ class Galkin(GalkinModel, GalkinObservation):
         """
         mass_center_x, mass_center_y = self._extract_center(kwargs_mass)
 
-        delta_x, delta_y = self._delta_pix_xy()
-        assert np.abs(delta_x) == np.abs(delta_y)
-
-        x_grid = self._aperture.x_grid
-        y_grid = self._aperture.y_grid
-
-        new_delta_x = delta_x / supersampling_factor
-        new_delta_y = delta_y / supersampling_factor
-        x_start = x_grid[0, 0] - delta_x / 2.0 * (1 - 1 / supersampling_factor)
-        x_end = x_grid[0, -1] + delta_x / 2.0 * (1 - 1 / supersampling_factor)
-        y_start = y_grid[0, 0] - delta_y / 2.0 * (1 - 1 / supersampling_factor)
-        y_end = y_grid[-1, 0] + delta_y / 2.0 * (1 - 1 / supersampling_factor)
-
-        xs = np.arange(x_start, x_end * (1 + 1e-6), new_delta_x)
-        ys = np.arange(y_start, y_end * (1 + 1e-6), new_delta_y)
-
-        x_grid_supersampled, y_grid_supersmapled = np.meshgrid(xs, ys)
+        x_grid_supersampled, y_grid_supersampled = self.aperture_sample(supersampling_factor)
 
         log10_radial_distance_from_center = np.log10(
             np.sqrt(
                 (x_grid_supersampled - mass_center_x) ** 2
-                + (y_grid_supersmapled - mass_center_y) ** 2
+                + (y_grid_supersampled - mass_center_y) ** 2
             )
         )
 
         return (
             x_grid_supersampled,
-            y_grid_supersmapled,
+            y_grid_supersampled,
             log10_radial_distance_from_center,
         )
 
@@ -285,23 +270,19 @@ class Galkin(GalkinModel, GalkinObservation):
             raise ValueError(
                 "Voronoi bins can only be used with the IFU_grid aperture!"
             )
-        if self.aperture_type == "IFU_binned":
-            voronoi_bins = self._aperture.bins
         if supersampling_factor is None:
             supersampling_factor = self._default_supersampling_factor
+
         (
-            x_grid_supersmapled,
-            y_grid_supersmapled,
+            x_grid_supersampled,
+            y_grid_supersampled,
             log10_radial_distance_from_center,
         ) = self._get_grid(kwargs_mass, supersampling_factor=supersampling_factor)
 
-        x_grid = self._aperture.x_grid
-        y_grid = self._aperture.y_grid
-
         mass_center_x, mass_center_y = self._extract_center(kwargs_mass)
         R_max = np.sqrt(
-            (x_grid_supersmapled - mass_center_x) ** 2
-            + (y_grid_supersmapled - mass_center_y) ** 2
+            (x_grid_supersampled - mass_center_x) ** 2
+            + (y_grid_supersampled - mass_center_y) ** 2
         ).max()
         Rs = np.logspace(
             np.log10(self.numerics.min_integrate), np.log10(R_max + 0.1), 300
@@ -347,35 +328,23 @@ class Galkin(GalkinModel, GalkinObservation):
         )
         IR_convolved = convolve2d(IR_grid, convolution_kernel, mode="same")
 
+        sigma_IR_integrated = self.aperture_downsample(
+            sigma2_IR_convolved,
+            supersampling_factor
+        )
+        IR_integrated = self.aperture_downsample(
+            IR_convolved,
+            supersampling_factor
+        )
+
         if voronoi_bins is not None:
-            n_bins = int(np.max(voronoi_bins)) + 1
-
-            sigma_IR_integrated = np.zeros(n_bins)
-            IR_integrated = np.zeros(n_bins)
-
-            supersampled_voronoi_bins = voronoi_bins.repeat(
-                supersampling_factor, axis=0
-            ).repeat(supersampling_factor, axis=1)
-
-            for n in range(n_bins):
-                sigma_IR_integrated[n] = np.sum(
-                    sigma2_IR_convolved[supersampled_voronoi_bins == n]
-                )
-                IR_integrated[n] = np.sum(IR_convolved[supersampled_voronoi_bins == n])
-        else:
-            sigma_IR_integrated = (
-                sigma2_IR_convolved.reshape(
-                    len(x_grid), supersampling_factor, len(y_grid), supersampling_factor
-                )
-                .sum(3)
-                .sum(1)
+            sigma_IR_integrated = downsample_values_to_bins(
+                sigma_IR_integrated,
+                voronoi_bins
             )
-            IR_integrated = (
-                IR_convolved.reshape(
-                    len(x_grid), supersampling_factor, len(y_grid), supersampling_factor
-                )
-                .sum(3)
-                .sum(1)
+            IR_integrated = downsample_values_to_bins(
+                IR_integrated,
+                voronoi_bins
             )
 
         sigma2_grid = sigma_IR_integrated / IR_integrated

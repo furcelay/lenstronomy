@@ -112,6 +112,7 @@ class TestGalkin(object):
             "x_grid": x_grid,
             "y_grid": y_grid,
             "aperture_type": "IFU_grid",
+            "padding_arcsec": 0,
         }
         kwargs_cosmo = {"d_d": 1000, "d_s": 1500, "d_ds": 800}
         kwargs_psf = {"psf_type": "GAUSSIAN", "fwhm": 1}

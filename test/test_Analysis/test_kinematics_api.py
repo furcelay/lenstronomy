@@ -1089,7 +1089,7 @@ class TestKinematicsAPI(object):
             [{"Rs": 1, "amp": 1, "center_x": 0, "center_y": 0}],
             {"r_ani": 1},
         )
-        npt.assert_allclose(vel_map_bins, [259.646809, 273.450448], rtol=1e-3)
+        npt.assert_allclose(vel_map_bins, [259.269119, 273.443235], rtol=1e-3)
 
     def test_multi_obs_dispersion(self):
         anisotropy_model = "const"
