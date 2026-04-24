@@ -33,6 +33,7 @@ class KinematicsAPI(object):
         multi_observations=False,
         multi_light_profile=False,
         kwargs_numerics_galkin=None,
+        kwargs_numerics_jampy=None,
         analytic_kinematics=False,
         Hernquist_approx=False,  # TODO: revise if this is still needed
         MGE_light=None,
@@ -84,6 +85,7 @@ class KinematicsAPI(object):
             defaults to False for Galkin and True for Jampy
         :param kwargs_numerics_galkin: numerical settings for the integrated
             line-of-sight velocity dispersion
+        :param kwargs_numerics_jampy: additional kwargs for the jampy call
         :param kwargs_mge_mass: keyword arguments that go into the MGE decomposition
             routine
             - n_gauss: number of Gaussian components to fit (default: 20)
@@ -183,7 +185,8 @@ class KinematicsAPI(object):
 
         self._kwargs_mge_mass = kwargs_mge_mass
         self._kwargs_mge_light = kwargs_mge_light
-        self._kwargs_numerics_kin = kwargs_numerics_galkin
+        self._kwargs_numerics_galkin = kwargs_numerics_galkin
+        self._kwargs_numerics_jampy = kwargs_numerics_jampy
         self._anisotropy_model = anisotropy_model
         self._analytic_kinematics = analytic_kinematics
         self._Hernquist_approx = Hernquist_approx
@@ -445,7 +448,7 @@ class KinematicsAPI(object):
                         kwargs_aperture=self._kwargs_aperture_kin[i],
                         kwargs_psf=self._kwargs_psf_kin[i],
                         kwargs_cosmo=self._kwargs_cosmo,
-                        kwargs_numerics=self._kwargs_numerics_kin,
+                        kwargs_numerics=self._kwargs_numerics_galkin,
                         analytic_kinematics=self._analytic_kinematics,
                     )
                 else:
@@ -454,7 +457,7 @@ class KinematicsAPI(object):
                         kwargs_aperture=self._kwargs_aperture_kin[i],
                         kwargs_psf=self._kwargs_psf_kin[i],
                         kwargs_cosmo=self._kwargs_cosmo,
-                        kwargs_numerics=self._kwargs_numerics_kin,
+                        kwargs_numerics=self._kwargs_numerics_galkin,
                         analytic_kinematics=self._analytic_kinematics,
                     )
             elif self.kinematics_backend == "jampy":
@@ -463,6 +466,7 @@ class KinematicsAPI(object):
                     kwargs_aperture=self._kwargs_aperture_kin[i],
                     kwargs_psf=self._kwargs_psf_kin[i],
                     kwargs_cosmo=self._kwargs_cosmo,
+                    kwargs_jampy=self._kwargs_numerics_jampy,
                 )
             jam_models.append(jam_model_i)
 
@@ -708,7 +712,7 @@ class KinematicsAPI(object):
             )
         self._kwargs_mge_mass = kwargs_mge_mass
         self._kwargs_mge_light = kwargs_mge_light
-        self._kwargs_numerics_kin = kwargs_numerics_galkin
+        self._kwargs_numerics_galkin = kwargs_numerics_galkin
         self._anisotropy_model = anisotropy_model
         self._analytic_kinematics = analytic_kinematics
         self._Hernquist_approx = Hernquist_approx
