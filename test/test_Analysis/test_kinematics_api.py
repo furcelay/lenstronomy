@@ -317,6 +317,94 @@ class TestKinematicsAPI(object):
         )
         npt.assert_almost_equal(kwargs_light[0][0]["Rs"], 1, decimal=2)
 
+    def test_jam_settings_symmetry(self):
+        z_lens = 0.5
+        z_source = 1.5
+        kwargs_model = {
+            "lens_model_list": ["SIS"],
+            "lens_light_model_list": ["HERNQUIST"],
+        }
+
+        kwargs_lens = [{"theta_E": 1, "center_x": 0, "center_y": 0}]
+        kwargs_lens_light = [{"amp": 1, "Rs": 1, "center_x": 0, "center_y": 0}]
+        r_ani = 0.62
+        kwargs_anisotropy = {"r_ani": r_ani}
+        R_slit = 3.8
+        dR_slit = 1.0
+        aperture_type = "slit"
+        kwargs_aperture = {
+            "aperture_type": aperture_type,
+            "center_ra": 0,
+            "width": dR_slit,
+            "length": R_slit,
+            "angle": 0,
+            "center_dec": 0,
+        }
+
+        psf_fwhm = 0.7
+        kwargs_psf = {"psf_type": "GAUSSIAN", "fwhm": psf_fwhm}
+        anisotropy_model = "OM"
+        kwargs_mge = {"n_comp": 20}
+        kinematicAPI = KinematicsAPI(
+            z_lens,
+            z_source,
+            kwargs_model,
+            kwargs_aperture=kwargs_aperture,
+            kwargs_seeing=kwargs_psf,
+            analytic_kinematics=False,
+            anisotropy_model=anisotropy_model,
+            kwargs_mge_light=kwargs_mge,
+            kwargs_mge_mass=kwargs_mge,
+            sampling_number=1000,
+            kinematics_backend="jampy",
+            axial_symmetry="spherical",
+        )
+        jampy_models, kwargs_profile, kwargs_light = kinematicAPI.jam_model_settings(
+            kwargs_lens, kwargs_lens_light, r_eff=None, theta_E=None, gamma=None
+        )
+        assert jampy_models[0].axisymmetric is False
+        assert jampy_models[0].symmetry == "spherical"
+
+        kinematicAPI = KinematicsAPI(
+            z_lens,
+            z_source,
+            kwargs_model,
+            kwargs_aperture=kwargs_aperture,
+            kwargs_seeing=kwargs_psf,
+            analytic_kinematics=False,
+            anisotropy_model=anisotropy_model,
+            kwargs_mge_light=kwargs_mge,
+            kwargs_mge_mass=kwargs_mge,
+            sampling_number=1000,
+            kinematics_backend="jampy",
+            axial_symmetry="axi_sph",
+        )
+        jampy_models, kwargs_profile, kwargs_light = kinematicAPI.jam_model_settings(
+            kwargs_lens, kwargs_lens_light, r_eff=None, theta_E=None, gamma=None
+        )
+        assert jampy_models[0].axisymmetric is True
+        assert jampy_models[0].symmetry == "axi_sph"
+
+        kinematicAPI = KinematicsAPI(
+            z_lens,
+            z_source,
+            kwargs_model,
+            kwargs_aperture=kwargs_aperture,
+            kwargs_seeing=kwargs_psf,
+            analytic_kinematics=False,
+            anisotropy_model=anisotropy_model,
+            kwargs_mge_light=kwargs_mge,
+            kwargs_mge_mass=kwargs_mge,
+            sampling_number=1000,
+            kinematics_backend="jampy",
+            axial_symmetry="axi_cyl",
+        )
+        jampy_models, kwargs_profile, kwargs_light = kinematicAPI.jam_model_settings(
+            kwargs_lens, kwargs_lens_light, r_eff=None, theta_E=None, gamma=None
+        )
+        assert jampy_models[0].axisymmetric is True
+        assert jampy_models[0].symmetry == "axi_cyl"
+
     def test_kinematic_light_profile(self):
         z_lens = 0.5
         z_source = 1.5
@@ -1183,14 +1271,14 @@ class TestKinematicsAPI(object):
                 "center_y": 0.01,
             }
         ]
-        deltaPix = 0.1
-        numPix = 100
+        delta_pix = 0.1
+        num_pix = 100
 
         kwargs_interp = light2mass_interpol(
             ["SERSIC"],
             kwargs_lens_light=kwargs_light,
-            numPix=numPix,
-            deltaPix=deltaPix,
+            num_pix=num_pix,
+            delta_pix=delta_pix,
             subgrid_res=5,
         )
         kwargs_lens_interp = [kwargs_interp]
@@ -1304,6 +1392,50 @@ class TestKinematicsAPI(object):
         kinematicAPI._analytic_kinematics = False
         assert kinematicAPI._copy_centers([{}], kwargs_lens_light) == [
             {"center_x": 0, "center_y": 0}
+        ]
+
+    def test_copy_ellip(self):
+        z_lens = 0.5
+        z_source = 1.5
+        kwargs_model = {
+            "lens_model_list": ["EPL"],
+            "lens_light_model_list": ["HERNQUIST_ELLIPSE"],
+        }
+        kwargs_aperture = {
+            "aperture_type": "slit",
+            "center_ra": 0,
+            "width": 1,
+            "length": 1,
+            "angle": 0,
+            "center_dec": 0,
+        }
+        psf_fwhm = 0.7
+        kwargs_seeing = {"psf_type": "GAUSSIAN", "fwhm": psf_fwhm}
+        anisotropy_model = "OM"
+        kinematicAPI = KinematicsAPI(
+            z_lens,
+            z_source,
+            kwargs_model,
+            kwargs_seeing,
+            kwargs_aperture,
+            anisotropy_model=anisotropy_model,
+            analytic_kinematics=False,
+            kinematics_backend="jampy",
+            axial_symmetry="axi_sph",
+        )
+        kwargs_lens = [
+            {"theta_E": 1, "center_x": 0, "center_y": 0, "e1": 0.1, "e2": -0.1},
+        ]
+        kwargs_lens_light = [
+            {"Rs": 1, "amp": 1, "center_x": 0, "center_y": 0, "e1": 0.1, "e2": -0.1}
+        ]
+        kwargs_anisotropy = {"r_ani": 1}
+
+        assert kinematicAPI._copy_ellip([{}], kwargs_lens) == [{"e1": 0.1, "e2": -0.1}]
+
+        kinematicAPI._analytic_kinematics = False
+        assert kinematicAPI._copy_ellip([{}], kwargs_lens_light) == [
+            {"e1": 0.1, "e2": -0.1}
         ]
 
 
@@ -1489,6 +1621,91 @@ class TestRaise(unittest.TestCase):
 
 
 class TestKinematicsAPIJAMPy(object):
+
+    @pytest.mark.parametrize(
+        "point_mass_model, point_mass_kwargs",
+        [
+            ("POINT_MASS", {"theta_E": 0.03}),
+            ("POINT_MASS_LOG_SCALED", {"log10_theta_E": np.log10(0.03)}),
+        ],
+    )
+    def test_point_mass_is_converted_to_black_hole_mass(
+        self, point_mass_model, point_mass_kwargs
+    ):
+        z_lens = 0.5
+        z_source = 1.5
+        kwargs_model = {
+            "lens_model_list": ["EPL", point_mass_model],
+            "lens_light_model_list": ["SERSIC_ELLIPSE"],
+        }
+        kwargs_lens = [
+            {
+                "theta_E": 1.5,
+                "e1": 0,
+                "center_x": -0.044798916793300093,
+                "center_y": 0.0054408937891703788,
+                "e2": 0,
+                "gamma": 1.8,
+            },
+            {
+                "center_x": 0.0,
+                "center_y": 0.0,
+                **point_mass_kwargs,
+            },
+        ]
+
+        phi, q = -0.52624727893702705, 0.79703498156919605
+        e1, e2 = param_util.phi_q2_ellipticity(phi, q)
+        kwargs_lens_light = [
+            {
+                "n_sersic": 1.1212528655709217,
+                "center_x": -0.019674496231393473,
+                "e1": e1,
+                "e2": e2,
+                "amp": 1.1091367792010356,
+                "center_y": 0.076914975081560991,
+                "R_sersic": 0.42691611878867058,
+            },
+        ]
+        kwargs_anisotropy = {"r_ani": 0.62}
+        kwargs_aperture = {
+            "aperture_type": "slit",
+            "center_ra": 0,
+            "width": 1.0,
+            "length": 3.8,
+            "angle": 0,
+            "center_dec": 0,
+        }
+        kwargs_psf = {"psf_type": "GAUSSIAN", "fwhm": 0.7}
+
+        kinematicAPI = KinematicsAPI(
+            z_lens,
+            z_source,
+            kwargs_model,
+            kwargs_aperture=kwargs_aperture,
+            kwargs_seeing=kwargs_psf,
+            anisotropy_model="OM",
+            kwargs_mge_light={"n_comp": 20},
+            kwargs_mge_mass={"n_comp": 20},
+            kinematics_backend="jampy",
+            MGE_light=True,
+            MGE_mass=True,
+        )
+
+        mass_profile_list, kwargs_profile = kinematicAPI.kinematic_lens_profiles(
+            kwargs_lens, MGE_fit=False
+        )
+
+        if "theta_E" in point_mass_kwargs:
+            expected_theta_E = point_mass_kwargs["theta_E"]
+        else:
+            expected_theta_E = 10.0 ** point_mass_kwargs["log10_theta_E"]
+        npt.assert_allclose(
+            kinematicAPI._black_hole_mass,
+            kinematicAPI.lensCosmo.mass_in_theta_E(expected_theta_E),
+        )
+        assert mass_profile_list == ["EPL"]
+        assert len(kwargs_profile) == 1
 
     def test_velocity_dispersion(self):
         z_lens = 0.5
