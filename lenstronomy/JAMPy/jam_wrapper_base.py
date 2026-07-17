@@ -79,7 +79,7 @@ class JAMWrapperBase(object):
         psf_amplitudes=1,
         delta_pix=0,
         black_hole_mass=0,
-        jam_kwargs=None,
+        kwargs_jampy=None,
     ):
         """Computes the LOS velocity dispersion at given points (not convolved).
 
@@ -97,7 +97,7 @@ class JAMWrapperBase(object):
         :param psf_amplitudes: 1 or array with PSF amplitudes
         :param delta_pix: delta pix
         :param black_hole_mass: mass of the central SMBH [solar masses]
-        :param jam_kwargs: keyword arguments for JAM call
+        :param kwargs_jampy: keyword arguments for JAM call
         :return: array of LOS velocity dispersion at each (x,y) position [km/s]
         """
 
@@ -111,11 +111,18 @@ class JAMWrapperBase(object):
         # convert to units of M_sun / pc^2
         surf_mass *= self.cosmo.epsilon_crit * 1e-12
 
+        _, q_lum = ellipticity2phi_q(*self._extract_ellipticity(kwargs_light))
+        _, q_mass = ellipticity2phi_q(*self._extract_ellipticity(kwargs_mass))
+
+        if self.axisymmetric:
+            # convert from product-average ellipticity definition to major axis
+            sigma_lum = sigma_lum / np.sqrt(q_lum)
+            sigma_mass = sigma_mass / np.sqrt(q_mass)
+
         beta = self._anisotropy.jampy_params(kwargs_anisotropy)
         if not self._anisotropy.use_logistic:
             beta = beta * np.ones_like(surf_lum)
-        _, q_lum = ellipticity2phi_q(*self._extract_ellipticity(kwargs_light))
-        _, q_mass = ellipticity2phi_q(*self._extract_ellipticity(kwargs_mass))
+
         if not convolved:
             psf_sigmas = 0.0
             delta_pix = 0.0
@@ -136,7 +143,7 @@ class JAMWrapperBase(object):
             norm_psf=psf_amplitudes,
             pix_size=delta_pix,
             black_hole_mass=black_hole_mass,
-            jam_kwargs=jam_kwargs,
+            jam_kwargs=kwargs_jampy,
         )
         return vrms, surf_bright
 
